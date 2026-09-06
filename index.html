@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wealth & Asset Allocation Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- LOGIN / REGISTER SCREEN -->
+  <div id="authScreen" class="auth-container card">
+    <h2 style="text-align: center; margin-bottom: 16px;">Sign In or Register</h2>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <input type="email" id="authEmail" placeholder="Email address" />
+      <input type="password" id="authPassword" placeholder="Password (min 6 characters)" />
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button onclick="handleAuth(false)" style="flex: 1;">Login</button>
+        <button onclick="handleAuth(true)" class="btn-secondary" style="flex: 1;">Sign Up</button>
+      </div>
+      <div id="authError" style="color: var(--red-text); font-size: 0.85rem; margin-top: 6px;"></div>
+    </div>
+  </div>
+
+  <!-- MAIN APPLICATION SCREEN -->
+  <div id="appScreen" style="display: none;">
+    <div class="row-between" style="margin-bottom: 16px;">
+      <div>
+        <span class="stat-label">Account:</span>
+        <strong id="userGreeting" style="font-size: 0.95rem;"></strong>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <span class="rate-badge" id="fxRateDisplay">USD Rate: Loading...</span>
+        <button onclick="handleSignOut()" class="btn-sm btn-secondary">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- NET WORTH SUMMARY CARD -->
+    <div class="card">
+      <div class="row-between">
+        <div>
+          <div class="stat-label">Total Portfolio Net Worth (INR)</div>
+          <div class="stat-value" id="netWorthDisplay">₹0</div>
+        </div>
+        <div style="text-align: right;">
+          <div class="stat-label">Normalized in USD</div>
+          <div style="font-size: 1.25rem; font-weight: 700; color: #94a3b8; margin-top: 4px;" id="netWorthSubDisplay">$0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT COLUMN: ALLOCATIONS & GOALS -->
+      <div>
+        <div class="card">
+          <h2>Target Allocation (±5% Alerts)</h2>
+          <div id="allocationList"></div>
+        </div>
+
+        <div class="card">
+          <h2>Goal-Based Portfolios</h2>
+          <input type="hidden" id="goalEditId" value="" />
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;">
+            <input type="text" id="goalTitle" placeholder="Goal Name (e.g., Retirement, Higher Ed)" />
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="goalTarget" placeholder="Target ₹" style="flex: 2;" />
+              <input type="number" id="goalYears" placeholder="Years" title="Time Horizon in Years" style="flex: 1;" />
+              <input type="number" id="goalReturn" placeholder="Exp %" title="Expected Annual Return %" style="flex: 1;" />
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="goalSubmitBtn" onclick="saveGoal()" style="flex: 2;">Save Goal</button>
+              <button id="goalCancelBtn" onclick="cancelGoalEdit()" class="btn-secondary" style="flex: 1; display: none;">Cancel</button>
+            </div>
+          </div>
+          <div id="goalsList"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: HOLDINGS ENTRY & LIST -->
+      <div>
+        <div class="card">
+          <h2>Add Investment Holding</h2>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <input type="text" id="holdingName" placeholder="Holding Name (e.g., NVDA, Reliance, HDFC FD)" />
+            
+            <div style="display: flex; gap: 8px;">
+              <select id="assetCategory" style="flex: 1;">
+                <option value="Indian Stocks">Indian Stocks</option>
+                <option value="US Stocks">US Stocks</option>
+                <option value="Mutual Funds">Mutual Funds</option>
+                <option value="Fixed Deposits">Fixed Deposits</option>
+                <option value="Bonds">Bonds</option>
+                <option value="Gold">Gold</option>
+                <option value="Real Estate">Real Estate</option>
+              </select>
+
+              <select id="holdingCurrency" style="width: 85px;">
+                <option value="INR">₹ INR</option>
+                <option value="USD">$ USD</option>
+              </select>
+            </div>
+
+            <input type="number" id="holdingValue" placeholder="Current Value" />
+
+            <div>
+              <span class="stat-label" style="display: block; margin-bottom: 4px;">Assign to Goal (Optional):</span>
+              <select id="holdingGoal" style="width: 100%;">
+                <option value="">General Portfolio (No Goal)</option>
+              </select>
+            </div>
+
+            <button onclick="addHolding()">Add to Portfolio</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Holdings Breakdown</h2>
+          <table id="holdingsTable">
+            <thead>
+              <tr>
+                <th>Holding</th>
+                <th>Value</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
