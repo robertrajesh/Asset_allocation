@@ -46,6 +46,44 @@ body {
   }
 }
 
+.grid-three {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+@media (min-width: 768px) {
+  .grid-three {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+/* Tabs */
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.tab-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #334155;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .stat-label {
   font-size: 0.85rem;
   color: var(--muted);
