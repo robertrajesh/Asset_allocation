@@ -17,8 +17,8 @@
       <input type="password" id="authPassword" placeholder="Password (min 6 characters)" />
       
       <div style="display: flex; gap: 8px; margin-top: 6px;">
-        <button onclick="handleAuth(false)" style="flex: 1;">Login</button>
-        <button onclick="handleAuth(true)" class="btn-secondary" style="flex: 1;">Sign Up</button>
+        <button type="button" onclick="handleAuth(false)" style="flex: 1;">Login</button>
+        <button type="button" onclick="handleAuth(true)" class="btn-secondary" style="flex: 1;">Sign Up</button>
       </div>
 
       <div style="text-align: center; margin-top: 8px;">
@@ -28,11 +28,11 @@
 
     <!-- Forgot Password View -->
     <div id="forgotForm" style="display: none; flex-direction: column; gap: 10px;">
-      <p style="font-size: 0.85rem; color: var(--muted);">Enter your registered email to receive a password reset prompt.</p>
+      <p style="font-size: 0.85rem; color: var(--muted);">Enter your registered email to reset your password.</p>
       <input type="email" id="resetEmail" placeholder="Enter registered email" />
       <div style="display: flex; gap: 8px; margin-top: 6px;">
-        <button onclick="sendPasswordReset()" style="flex: 1;">Reset Password</button>
-        <button onclick="toggleForgotView(false)" class="btn-secondary" style="flex: 1;">Back to Login</button>
+        <button type="button" onclick="sendPasswordReset()" style="flex: 1;">Reset Password</button>
+        <button type="button" onclick="toggleForgotView(false)" class="btn-secondary" style="flex: 1;">Back to Login</button>
       </div>
     </div>
 
@@ -50,14 +50,14 @@
       </div>
       <div style="display: flex; gap: 8px; align-items: center;">
         <span class="rate-badge" id="fxRateDisplay">USD Rate: Loading...</span>
-        <button onclick="handleSignOut()" class="btn-sm btn-secondary">Sign Out</button>
+        <button type="button" onclick="handleSignOut()" class="btn-sm btn-secondary">Sign Out</button>
       </div>
     </div>
 
     <!-- Navigation Tabs -->
     <div class="tab-bar">
-      <button id="tabBtnPortfolio" class="tab-btn active" onclick="switchTab('portfolio')">Portfolio & Goals</button>
-      <button id="tabBtnCashflow" class="tab-btn" onclick="switchTab('cashflow')">Income & Expenses</button>
+      <button type="button" id="tabBtnPortfolio" class="tab-btn active" onclick="switchTab('portfolio')">Portfolio & Goals</button>
+      <button type="button" id="tabBtnCashflow" class="tab-btn" onclick="switchTab('cashflow')">Income & Expenses</button>
     </div>
 
     <!-- TAB 1: PORTFOLIO & GOALS -->
@@ -87,21 +87,22 @@
             <h2>Goal-Based Portfolios</h2>
             <input type="hidden" id="goalEditId" value="" />
             <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;">
-              <input type="text" id="goalTitle" placeholder="Goal Name (e.g., Retirement, Education)" />
+              <input type="text" id="goalTitle" placeholder="Goal Name (e.g., Retirement, House, Education)" />
               
               <div style="display: flex; gap: 8px;">
-                <input type="number" id="goalCostToday" placeholder="Current Cost ₹" title="Cost of the goal in today's money" oninput="calculateFutureTargetPreview()" style="flex: 1;" />
+                <input type="number" id="goalCostToday" placeholder="Current Cost ₹" title="Cost of goal in today's money" oninput="calculateFutureTargetPreview()" style="flex: 1;" />
                 <input type="number" id="goalYears" placeholder="Years" title="Time Horizon in Years" oninput="calculateFutureTargetPreview()" style="flex: 1;" />
                 <input type="number" id="goalReturn" placeholder="Exp %" title="Expected Annual Return %" style="flex: 1;" />
               </div>
 
+              <!-- Real-time Inflation Adjusted Indicator -->
               <div id="inflationPreview" style="font-size: 0.8rem; color: #38bdf8; background: #0b1120; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);">
                 Target at 7% inflation: ₹0
               </div>
 
               <div style="display: flex; gap: 8px;">
-                <button id="goalSubmitBtn" onclick="saveGoal()" style="flex: 2;">Save Goal</button>
-                <button id="goalCancelBtn" onclick="cancelGoalEdit()" class="btn-secondary" style="flex: 1; display: none;">Cancel</button>
+                <button type="button" id="goalSubmitBtn" onclick="saveGoal()" style="flex: 2;">Save Goal</button>
+                <button type="button" id="goalCancelBtn" onclick="cancelGoalEdit()" class="btn-secondary" style="flex: 1; display: none;">Cancel</button>
               </div>
             </div>
             <div id="goalsList"></div>
@@ -113,7 +114,7 @@
           <div class="card">
             <h2>Add Investment Holding</h2>
             <div style="display: flex; flex-direction: column; gap: 10px;">
-              <input type="text" id="holdingName" placeholder="Holding Name (e.g., Reliance, NVDA, SBI FD)" />
+              <input type="text" id="holdingName" placeholder="Holding Name (e.g., Nifty 50 ETF, Apple, FD)" />
               
               <div style="display: flex; gap: 8px;">
                 <select id="assetCategory" style="flex: 1;">
@@ -141,7 +142,7 @@
                 </select>
               </div>
 
-              <button onclick="addHolding()">Add to Portfolio</button>
+              <button type="button" onclick="addHolding()">Add to Portfolio</button>
             </div>
           </div>
 
@@ -180,6 +181,7 @@
       </div>
 
       <div class="grid">
+        <!-- Cashflow Form -->
         <div class="card">
           <h2>Add Income / Expense</h2>
           <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -191,21 +193,22 @@
               <select id="cashflowCategory" style="flex: 1;"></select>
             </div>
 
-            <input type="text" id="cashflowDesc" placeholder="Description (e.g. Salary, EMI)" />
+            <input type="text" id="cashflowDesc" placeholder="Description (e.g. Salary, Rent, EMI)" />
             <input type="number" id="cashflowAmount" placeholder="Monthly Amount (₹)" />
 
-            <button onclick="addCashflowItem()">Record Cashflow Entry</button>
+            <button type="button" onclick="addCashflowItem()">Record Cashflow Entry</button>
           </div>
         </div>
 
+        <!-- Cashflow List -->
         <div class="card">
           <h2>Monthly Cashflow Entries</h2>
           <table id="cashflowTable">
             <thead>
               <tr>
                 <th>Description</th>
-                <th>Type / Category</th>
-                <th>Monthly (₹)</th>
+                <th>Category</th>
+                <th>Monthly</th>
                 <th>Action</th>
               </tr>
             </thead>

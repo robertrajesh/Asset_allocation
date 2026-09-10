@@ -8,10 +8,20 @@ const DEFAULT_TARGETS = [
   { name: "Real Estate", target: 10 }
 ];
 
+const INCOME_CATEGORIES = ["Salary", "Bond Interest", "Rent", "Dividends", "Others"];
+const EXPENSE_CATEGORIES = ["Food", "EMI", "Others"];
+const INFLATION_RATE = 0.07; // 7% Annual Inflation
+
 let currentUser = null;
-let userData = { targets: DEFAULT_TARGETS, holdings: [], goals: [] };
+let userData = {
+  targets: DEFAULT_TARGETS,
+  holdings: [],
+  goals: [],
+  cashflow: []
+};
 let usdToInrRate = 84.0;
 
+// --- Live Currency Exchange ---
 async function fetchLiveExchangeRate() {
   try {
     const res = await fetch("https://open.er-api.com/v6/latest/USD");
@@ -19,12 +29,12 @@ async function fetchLiveExchangeRate() {
     if (data && data.rates && data.rates.INR) {
       usdToInrRate = parseFloat(data.rates.INR.toFixed(2));
       const el = document.getElementById("fxRateDisplay");
-      if (el) el.innerText = `1 USD = ₹${usdToInrRate}`;
+      if (el) el.innerText = "1 USD = ₹" + usdToInrRate;
     }
   } catch (err) {
-    console.warn("Using offline fallback rate:", err);
+    console.warn("Using fallback rate:", err);
     const el = document.getElementById("fxRateDisplay");
-    if (el) el.innerText = `1 USD = ₹${usdToInrRate} (offline)`;
+    if (el) el.innerText = "1 USD = ₹" + usdToInrRate + " (offline)";
   }
   render();
 }
@@ -33,6 +43,37 @@ function getUsersDb() {
   return JSON.parse(localStorage.getItem('registered_users') || '{}');
 }
 
+// --- Navigation Tabs ---
+window.switchTab = function (tab) {
+  const pView = document.getElementById("viewPortfolio");
+  const cView = document.getElementById("viewCashflow");
+  const pBtn = document.getElementById("tabBtnPortfolio");
+  const cBtn = document.getElementById("tabBtnCashflow");
+
+  if (!pView || !cView || !pBtn || !cBtn) return;
+
+  if (tab === "portfolio") {
+    pView.style.display = "block";
+    cView.style.display = "none";
+    pBtn.classList.add("active");
+    cBtn.classList.remove("active");
+  } else {
+    pView.style.display = "none";
+    cView.style.display = "block";
+    pBtn.classList.remove("active");
+    cBtn.classList.add("active");
+    updateCashflowCategories();
+  }
+};
+
+// --- Authentication & Password Management ---
+window.toggleForgotView = function (showForgot) {
+  document.getElementById("authForm").style.display = showForgot ? "none" : "flex";
+  document.getElementById("forgotForm").style.display = showForgot ? "flex" : "none";
+  document.getElementById("authHeading").innerText = showForgot ? "Reset Password" : "Sign In or Register";
+  document.getElementById("authError").innerText = "";
+};
+
 window.handleAuth = function (isSignUp) {
   const email = document.getElementById("authEmail").value.trim().toLowerCase();
   const password = document.getElementById("authPassword").value;
@@ -40,7 +81,7 @@ window.handleAuth = function (isSignUp) {
   errorEl.innerText = "";
 
   if (!email || !password || password.length < 6) {
-    errorEl.innerText = "Please enter an email and password (min 6 characters).";
+    errorEl.innerText = "Please provide email and password (min 6 characters).";
     return;
   }
 
@@ -51,7 +92,7 @@ window.handleAuth = function (isSignUp) {
       errorEl.innerText = "Account already exists. Click Login.";
       return;
     }
-    users[email] = { password, targets: DEFAULT_TARGETS, holdings: [], goals: [] };
+    users[email] = { password: password, targets: DEFAULT_TARGETS, holdings: [], goals: [], cashflow: [] };
     localStorage.setItem('registered_users', JSON.stringify(users));
     loginUser(email, users[email]);
   } else {
@@ -67,17 +108,47 @@ window.handleAuth = function (isSignUp) {
   }
 };
 
+window.sendPasswordReset = function () {
+  const email = document.getElementById("resetEmail").value.trim().toLowerCase();
+  const errorEl = document.getElementById("authError");
+  errorEl.innerText = "";
+
+  if (!email) {
+    errorEl.innerText = "Please enter your registered email.";
+    return;
+  }
+
+  const users = getUsersDb();
+  if (!users[email]) {
+    errorEl.innerText = "No user found with this email.";
+    return;
+  }
+
+  const newPass = prompt("Password recovery for " + email + ":\nEnter your new password (minimum 6 characters):");
+  if (newPass && newPass.length >= 6) {
+    users[email].password = newPass;
+    localStorage.setItem('registered_users', JSON.stringify(users));
+    alert("Password updated successfully! Please log in with your new password.");
+    toggleForgotView(false);
+  } else if (newPass !== null) {
+    alert("Password must be at least 6 characters.");
+  }
+};
+
 function loginUser(email, data) {
   currentUser = email;
+  // Fallbacks guarantee backward compatibility for existing user accounts
   userData = {
-    targets: data.targets || DEFAULT_TARGETS,
-    holdings: data.holdings || [],
-    goals: data.goals || []
+    targets: Array.isArray(data.targets) ? data.targets : DEFAULT_TARGETS,
+    holdings: Array.isArray(data.holdings) ? data.holdings : [],
+    goals: Array.isArray(data.goals) ? data.goals : [],
+    cashflow: Array.isArray(data.cashflow) ? data.cashflow : []
   };
   sessionStorage.setItem('current_user', email);
   document.getElementById("authScreen").style.display = "none";
   document.getElementById("appScreen").style.display = "block";
   document.getElementById("userGreeting").innerText = email;
+  updateCashflowCategories();
   fetchLiveExchangeRate();
   render();
 }
@@ -93,11 +164,13 @@ window.handleSignOut = function () {
 function persistData() {
   if (!currentUser) return;
   const users = getUsersDb();
-  users[currentUser] = {
-    password: users[currentUser].password,
-    ...userData
-  };
-  localStorage.setItem('registered_users', JSON.stringify(users));
+  if (users[currentUser]) {
+    users[currentUser] = {
+      password: users[currentUser].password,
+      ...userData
+    };
+    localStorage.setItem('registered_users', JSON.stringify(users));
+  }
   render();
 }
 
@@ -105,6 +178,7 @@ function getNormalizedINR(holding) {
   return holding.currency === "USD" ? holding.value * usdToInrRate : holding.value;
 }
 
+// --- Target Allocations ---
 window.updateTarget = function (catName, newTarget) {
   const val = Math.max(0, parseFloat(newTarget) || 0);
   const item = userData.targets.find(t => t.name === catName);
@@ -127,28 +201,53 @@ window.autoBalanceTargets = function () {
   persistData();
 };
 
+// --- Goal Operations with 7% Inflation Calculator ---
+window.calculateFutureTargetPreview = function () {
+  const costToday = parseFloat(document.getElementById("goalCostToday").value) || 0;
+  const years = parseFloat(document.getElementById("goalYears").value) || 0;
+  const futureValue = costToday * Math.pow(1 + INFLATION_RATE, years);
+  
+  const previewEl = document.getElementById("inflationPreview");
+  if (costToday > 0 && years > 0) {
+    previewEl.innerText = "Future Target @ 7% Inflation (" + years + " yrs): ₹" + Math.round(futureValue).toLocaleString('en-IN');
+  } else {
+    previewEl.innerText = "Target at 7% inflation: ₹0";
+  }
+};
+
 window.saveGoal = function () {
   const id = document.getElementById("goalEditId").value;
   const title = document.getElementById("goalTitle").value.trim();
-  const target = parseFloat(document.getElementById("goalTarget").value);
+  const costToday = parseFloat(document.getElementById("goalCostToday").value);
   const years = parseFloat(document.getElementById("goalYears").value) || 1;
   const expectedReturn = parseFloat(document.getElementById("goalReturn").value) || 0;
 
-  if (!title || isNaN(target) || target <= 0) {
-    alert("Enter valid goal title and target amount.");
+  if (!title || isNaN(costToday) || costToday <= 0) {
+    alert("Please enter a valid goal name and current cost.");
     return;
   }
+
+  // Future target compounded by 7% inflation
+  const targetFuture = costToday * Math.pow(1 + INFLATION_RATE, years);
 
   if (id) {
     const goal = userData.goals.find(g => g.id == id);
     if (goal) {
       goal.title = title;
-      goal.target = target;
+      goal.costToday = costToday;
+      goal.target = targetFuture;
       goal.years = years;
       goal.expectedReturn = expectedReturn;
     }
   } else {
-    userData.goals.push({ id: Date.now(), title, target, years, expectedReturn });
+    userData.goals.push({
+      id: Date.now(),
+      title: title,
+      costToday: costToday,
+      target: targetFuture,
+      years: years,
+      expectedReturn: expectedReturn
+    });
   }
 
   resetGoalForm();
@@ -160,11 +259,12 @@ window.editGoal = function (id) {
   if (!goal) return;
   document.getElementById("goalEditId").value = goal.id;
   document.getElementById("goalTitle").value = goal.title;
-  document.getElementById("goalTarget").value = goal.target;
+  document.getElementById("goalCostToday").value = goal.costToday || Math.round(goal.target);
   document.getElementById("goalYears").value = goal.years || 1;
   document.getElementById("goalReturn").value = goal.expectedReturn || 0;
   document.getElementById("goalSubmitBtn").innerText = "Update Goal";
   document.getElementById("goalCancelBtn").style.display = "inline-block";
+  calculateFutureTargetPreview();
 };
 
 window.cancelGoalEdit = function () {
@@ -174,11 +274,12 @@ window.cancelGoalEdit = function () {
 function resetGoalForm() {
   document.getElementById("goalEditId").value = "";
   document.getElementById("goalTitle").value = "";
-  document.getElementById("goalTarget").value = "";
+  document.getElementById("goalCostToday").value = "";
   document.getElementById("goalYears").value = "";
   document.getElementById("goalReturn").value = "";
   document.getElementById("goalSubmitBtn").innerText = "Save Goal";
   document.getElementById("goalCancelBtn").style.display = "none";
+  document.getElementById("inflationPreview").innerText = "Target at 7% inflation: ₹0";
 }
 
 window.removeGoal = function (id) {
@@ -189,6 +290,7 @@ window.removeGoal = function (id) {
   persistData();
 };
 
+// --- Holdings ---
 window.addHolding = function () {
   const name = document.getElementById("holdingName").value.trim();
   const category = document.getElementById("assetCategory").value;
@@ -197,11 +299,11 @@ window.addHolding = function () {
   const goalId = document.getElementById("holdingGoal").value || null;
 
   if (!name || isNaN(value) || value <= 0) {
-    alert("Enter valid holding details.");
+    alert("Please enter valid holding name and value.");
     return;
   }
 
-  userData.holdings.push({ id: Date.now(), name, category, currency, value, goalId });
+  userData.holdings.push({ id: Date.now(), name: name, category: category, currency: currency, value: value, goalId: goalId });
   document.getElementById("holdingName").value = "";
   document.getElementById("holdingValue").value = "";
   persistData();
@@ -212,8 +314,50 @@ window.removeHolding = function (id) {
   persistData();
 };
 
+// --- Income and Expense Management ---
+window.updateCashflowCategories = function () {
+  const typeEl = document.getElementById("cashflowType");
+  const catSelect = document.getElementById("cashflowCategory");
+  if (!typeEl || !catSelect) return;
+
+  const type = typeEl.value;
+  catSelect.innerHTML = "";
+  const list = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  list.forEach(c => {
+    catSelect.innerHTML += '<option value="' + c + '">' + c + '</option>';
+  });
+};
+
+window.addCashflowItem = function () {
+  const type = document.getElementById("cashflowType").value;
+  const category = document.getElementById("cashflowCategory").value;
+  const desc = document.getElementById("cashflowDesc").value.trim() || category;
+  const amount = parseFloat(document.getElementById("cashflowAmount").value);
+
+  if (isNaN(amount) || amount <= 0) {
+    alert("Please enter a valid monthly amount.");
+    return;
+  }
+
+  if (!Array.isArray(userData.cashflow)) {
+    userData.cashflow = [];
+  }
+
+  userData.cashflow.push({ id: Date.now(), type: type, category: category, desc: desc, amount: amount });
+  document.getElementById("cashflowDesc").value = "";
+  document.getElementById("cashflowAmount").value = "";
+  persistData();
+};
+
+window.removeCashflowItem = function (id) {
+  userData.cashflow = (userData.cashflow || []).filter(c => c.id !== id);
+  persistData();
+};
+
+// --- Dashboard Render ---
 function render() {
-  const totalNetWorthINR = userData.holdings.reduce((sum, h) => sum + getNormalizedINR(h), 0);
+  // 1. Net Worth Totals
+  const totalNetWorthINR = (userData.holdings || []).reduce((sum, h) => sum + getNormalizedINR(h), 0);
   const totalNetWorthUSD = totalNetWorthINR / usdToInrRate;
 
   const nwEl = document.getElementById("netWorthDisplay");
@@ -221,25 +365,27 @@ function render() {
   if (nwEl) nwEl.innerText = "₹" + Math.round(totalNetWorthINR).toLocaleString('en-IN');
   if (nwSubEl) nwSubEl.innerText = "≈ $" + Math.round(totalNetWorthUSD).toLocaleString('en-US');
 
+  // 2. Goal Options in Holdings Dropdown
   const goalSelect = document.getElementById("holdingGoal");
   if (goalSelect) {
     const currentSelected = goalSelect.value;
     goalSelect.innerHTML = '<option value="">General Portfolio (No Goal)</option>';
-    userData.goals.forEach(g => {
+    (userData.goals || []).forEach(g => {
       goalSelect.innerHTML += '<option value="' + g.id + '">' + g.title + '</option>';
     });
     goalSelect.value = currentSelected;
   }
 
+  // 3. Allocations
   const catTotalsINR = {};
-  userData.targets.forEach(t => { catTotalsINR[t.name] = 0; });
-  userData.holdings.forEach(h => {
+  (userData.targets || []).forEach(t => { catTotalsINR[t.name] = 0; });
+  (userData.holdings || []).forEach(h => {
     if (catTotalsINR[h.category] !== undefined) {
       catTotalsINR[h.category] += getNormalizedINR(h);
     }
   });
 
-  const targetSum = userData.targets.reduce((acc, t) => acc + (Number(t.target) || 0), 0);
+  const targetSum = (userData.targets || []).reduce((acc, t) => acc + (Number(t.target) || 0), 0);
   const isTargetBalanced = Math.abs(targetSum - 100) < 0.01;
 
   const allocListEl = document.getElementById("allocationList");
@@ -252,7 +398,7 @@ function render() {
     bannerHtml += '<div class="row-between">';
     bannerHtml += '<span style="font-weight:600; color:' + textColor + ';">Total Target: ' + targetSum.toFixed(1) + '% / 100%</span>';
     if (!isTargetBalanced) {
-      bannerHtml += '<button onclick="autoBalanceTargets()" class="btn-sm btn-danger">Auto-Balance to 100%</button>';
+      bannerHtml += '<button type="button" onclick="autoBalanceTargets()" class="btn-sm btn-danger">Auto-Balance to 100%</button>';
     } else {
       bannerHtml += '<span style="color:#4ade80; font-size:0.8rem; font-weight:600;">✓ Balanced</span>';
     }
@@ -264,7 +410,7 @@ function render() {
 
     allocListEl.innerHTML = bannerHtml;
 
-    userData.targets.forEach(t => {
+    (userData.targets || []).forEach(t => {
       const valINR = catTotalsINR[t.name] || 0;
       const actualPct = totalNetWorthINR > 0 ? (valINR / totalNetWorthINR) * 100 : 0;
       const drift = actualPct - t.target;
@@ -294,12 +440,13 @@ function render() {
     });
   }
 
+  // 4. Holdings Table
   const tableBody = document.querySelector("#holdingsTable tbody");
   if (tableBody) {
     tableBody.innerHTML = "";
-    userData.holdings.forEach(h => {
+    (userData.holdings || []).forEach(h => {
       const valINR = getNormalizedINR(h);
-      const mappedGoal = userData.goals.find(g => g.id == h.goalId);
+      const mappedGoal = (userData.goals || []).find(g => g.id == h.goalId);
       const goalName = mappedGoal ? mappedGoal.title : "General";
 
       const displayCurrency = h.currency === "USD" 
@@ -309,21 +456,23 @@ function render() {
       tableBody.innerHTML += '<tr>' +
         '<td><strong>' + h.name + '</strong><br/><span class="stat-label">' + h.category + ' • ' + goalName + '</span></td>' +
         '<td>' + displayCurrency + '<br/><span class="stat-label">≈ ₹' + Math.round(valINR).toLocaleString('en-IN') + '</span></td>' +
-        '<td><button class="btn-sm btn-danger" onclick="removeHolding(' + h.id + ')">Delete</button></td>' +
+        '<td><button type="button" class="btn-sm btn-danger" onclick="removeHolding(' + h.id + ')">Delete</button></td>' +
       '</tr>';
     });
   }
 
+  // 5. Goals
   const goalsEl = document.getElementById("goalsList");
   if (goalsEl) {
     goalsEl.innerHTML = "";
-    userData.goals.forEach(g => {
-      const goalAllocatedINR = userData.holdings
+    (userData.goals || []).forEach(g => {
+      const goalAllocatedINR = (userData.holdings || [])
         .filter(h => h.goalId == g.id)
         .reduce((sum, h) => sum + getNormalizedINR(h), 0);
 
-      const pct = Math.min(100, g.target > 0 ? (goalAllocatedINR / g.target) * 100 : 0);
-      const remainingTarget = Math.max(0, g.target - goalAllocatedINR);
+      const targetVal = g.target || 0;
+      const pct = Math.min(100, targetVal > 0 ? (goalAllocatedINR / targetVal) * 100 : 0);
+      const remainingTarget = Math.max(0, targetVal - goalAllocatedINR);
 
       const years = Math.max(0.1, g.years || 1);
       const annualRate = (g.expectedReturn || 0) / 100;
@@ -363,15 +512,21 @@ function render() {
         '<div class="row-between">' +
           '<div>' +
             '<strong style="font-size:1rem;">' + g.title + '</strong>' +
-            '<span class="stat-label" style="display:block;">Timeline: ' + (g.years || 1) + ' Yr(s) • Exp. Return: ' + (g.expectedReturn || 0) + '% p.a.</span>' +
+            '<span class="stat-label" style="display:block;">' +
+              'Today\'s Cost: ₹' + Math.round(g.costToday || targetVal).toLocaleString('en-IN') + 
+              ' • Target (7% Inf): ₹' + Math.round(targetVal).toLocaleString('en-IN') +
+            '</span>' +
+            '<span class="stat-label" style="display:block;">' +
+              'Timeline: ' + (g.years || 1) + ' Yr(s) • Exp Return: ' + (g.expectedReturn || 0) + '% p.a.' +
+            '</span>' +
           '</div>' +
           '<div>' +
-            '<button class="btn-sm btn-secondary" onclick="editGoal(' + g.id + ')">Edit</button> ' +
-            '<button class="btn-sm btn-danger" onclick="removeGoal(' + g.id + ')">×</button>' +
+            '<button type="button" class="btn-sm btn-secondary" onclick="editGoal(' + g.id + ')">Edit</button> ' +
+            '<button type="button" class="btn-sm btn-danger" onclick="removeGoal(' + g.id + ')">×</button>' +
           '</div>' +
         '</div>' +
         '<div class="row-between stat-label" style="margin-top:6px;">' +
-          '<span>Allocated: ₹' + Math.round(goalAllocatedINR).toLocaleString('en-IN') + ' of ₹' + g.target.toLocaleString('en-IN') + '</span>' +
+          '<span>Allocated: ₹' + Math.round(goalAllocatedINR).toLocaleString('en-IN') + ' of ₹' + Math.round(targetVal).toLocaleString('en-IN') + '</span>' +
           '<span>' + pct.toFixed(1) + '%</span>' +
         '</div>' +
         '<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + pct + '%;"></div></div>' +
@@ -379,8 +534,48 @@ function render() {
       '</div>';
     });
   }
+
+  // 6. Income & Expenses Cashflow Summary
+  const cashflowArr = Array.isArray(userData.cashflow) ? userData.cashflow : [];
+  const totalIncome = cashflowArr
+    .filter(c => c.type === "income")
+    .reduce((sum, c) => sum + c.amount, 0);
+
+  const totalExpense = cashflowArr
+    .filter(c => c.type === "expense")
+    .reduce((sum, c) => sum + c.amount, 0);
+
+  const netSurplus = totalIncome - totalExpense;
+
+  const incEl = document.getElementById("totalIncomeDisplay");
+  const expEl = document.getElementById("totalExpenseDisplay");
+  const surpEl = document.getElementById("netSurplusDisplay");
+
+  if (incEl) incEl.innerText = "₹" + Math.round(totalIncome).toLocaleString('en-IN');
+  if (expEl) expEl.innerText = "₹" + Math.round(totalExpense).toLocaleString('en-IN');
+  if (surpEl) {
+    surpEl.innerText = "₹" + Math.round(netSurplus).toLocaleString('en-IN');
+    surpEl.style.color = netSurplus >= 0 ? "#38bdf8" : "#f87171";
+  }
+
+  const cashTableBody = document.querySelector("#cashflowTable tbody");
+  if (cashTableBody) {
+    cashTableBody.innerHTML = "";
+    cashflowArr.forEach(c => {
+      const color = c.type === "income" ? "color: #4ade80;" : "color: #f87171;";
+      const prefix = c.type === "income" ? "+₹" : "-₹";
+
+      cashTableBody.innerHTML += '<tr>' +
+        '<td><strong>' + c.desc + '</strong></td>' +
+        '<td><span class="stat-label">' + c.category + ' (' + c.type + ')</span></td>' +
+        '<td style="' + color + ' font-weight: 600;">' + prefix + c.amount.toLocaleString('en-IN') + '</td>' +
+        '<td><button type="button" class="btn-sm btn-danger" onclick="removeCashflowItem(' + c.id + ')">Delete</button></td>' +
+      '</tr>';
+    });
+  }
 }
 
+// Restore active session if present
 const active = sessionStorage.getItem('current_user');
 if (active && getUsersDb()[active]) {
   loginUser(active, getUsersDb()[active]);
