@@ -8,7 +8,7 @@
 </head>
 <body>
 
-  <!-- LOGIN / REGISTER / FORGOT PASSWORD SCREEN -->
+  <!-- AUTHENTICATION SCREEN -->
   <div id="authScreen" class="auth-container card">
     <h2 id="authHeading" style="text-align: center; margin-bottom: 16px;">Sign In or Register</h2>
     
@@ -110,23 +110,23 @@
           </div>
         </div>
 
-        <!-- Holdings -->
+        <!-- Investment Accounts (Holdings) -->
         <div>
           <div class="card">
-            <h2 id="holdingFormHeading">Add / Edit Investment Holding</h2>
+            <h2 id="holdingFormHeading">Create / Edit Investment Account (Sub-Category)</h2>
             <input type="hidden" id="holdingEditId" value="" />
             <div style="display: flex; flex-direction: column; gap: 10px;">
-              <input type="text" id="holdingName" placeholder="Holding Name (e.g., Zerodha Demat Equity, Schwab US)" />
               
               <div style="display: flex; gap: 8px;">
-                <select id="assetCategory" style="flex: 1;"></select>
+                <select id="assetCategory" style="flex: 1;" title="Main Asset Category"></select>
                 <select id="holdingCurrency" style="width: 85px;">
                   <option value="INR">₹ INR</option>
                   <option value="USD">$ USD</option>
                 </select>
               </div>
 
-              <input type="number" id="holdingValue" placeholder="Current Value" />
+              <input type="text" id="holdingName" placeholder="Account / Sub-category Name (e.g. Zerodha Account 1, Schwab US)" />
+              <input type="number" id="holdingValue" placeholder="Manual Value (auto-calculated if items added)" />
 
               <div>
                 <span class="stat-label" style="display: block; margin-bottom: 4px;">Assign to Goal (Optional):</span>
@@ -136,7 +136,7 @@
               </div>
 
               <div style="display: flex; gap: 8px;">
-                <button type="button" id="holdingSubmitBtn" onclick="saveHolding()" style="flex: 2;">Add to Portfolio</button>
+                <button type="button" id="holdingSubmitBtn" onclick="saveHolding()" style="flex: 2;">Save Account</button>
                 <button type="button" id="holdingCancelBtn" onclick="cancelHoldingEdit()" class="btn-secondary" style="flex: 1; display: none;">Cancel</button>
               </div>
             </div>
@@ -144,19 +144,9 @@
 
           <div class="card">
             <div class="row-between">
-              <h2>Holdings Breakdown</h2>
-              <button type="button" class="btn-sm btn-secondary" onclick="syncTradesToHoldings()" title="Auto-aggregate all ledger items into holdings">Auto-Sync From Trade Ledger</button>
+              <h2>Investment Accounts / Portfolios</h2>
             </div>
-            <table id="holdingsTable">
-              <thead>
-                <tr>
-                  <th>Holding</th>
-                  <th>Value</th>
-                  <th style="text-align: right;">Action</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+            <div id="holdingsCardsContainer" style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;"></div>
           </div>
         </div>
       </div>
@@ -165,15 +155,16 @@
     <!-- TAB 2: TRANSACTIONS / TRADE LEDGER -->
     <div id="viewTransactions" style="display: none;">
       
-      <!-- BULK CSV IMPORT CARD -->
+      <!-- TARGETED CSV IMPORT CARD -->
       <div class="card" style="border-left: 4px solid var(--accent);">
         <div class="row-between" style="margin-bottom: 8px;">
-          <h2>Import Broker Holdings CSV (Optional)</h2>
-          <span style="font-size: 0.8rem; color: var(--muted);">Supports Zerodha Kite (.csv) & US Broker summaries</span>
+          <h2>Import Broker Holdings CSV into Account</h2>
+          <span style="font-size: 0.8rem; color: var(--muted);">Select Main Category & Sub-Category to import into</span>
         </div>
         <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
-          <select id="importCategorySelect" style="flex: 1; min-width: 180px;" title="Category to assign imported items"></select>
-          <input type="file" id="portfolioCsvInput" accept=".csv" style="flex: 2; min-width: 220px;" />
+          <select id="importMainCatSelect" style="flex: 1; min-width: 160px;" onchange="updateImportSubCatDropdown()"></select>
+          <select id="importSubCatSelect" style="flex: 1; min-width: 180px;"></select>
+          <input type="file" id="portfolioCsvInput" accept=".csv" style="flex: 2; min-width: 200px;" />
           <button type="button" onclick="handlePortfolioCsvUpload()" style="padding: 8px 16px;">Upload & Import</button>
         </div>
       </div>
@@ -181,30 +172,23 @@
       <div class="grid">
         <!-- New Trade Form -->
         <div class="card">
-          <h2 id="tradeFormHeading">Record Trade / Investment Item</h2>
+          <h2 id="tradeFormHeading">Add Item to Portfolio / Trade Ledger</h2>
           <input type="hidden" id="tradeEditId" value="" />
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <div style="display: flex; gap: 8px;">
               <input type="date" id="tradeDate" style="flex: 1;" />
-              <select id="tradeCategory" style="flex: 1;" title="Primary category"></select>
+              <select id="tradeMainCategory" style="flex: 1;" onchange="updateTradeSubCatDropdown()"></select>
+              <select id="tradeSubCategory" style="flex: 1;"></select>
             </div>
 
             <div style="display: flex; gap: 8px;">
-              <input type="text" id="tradeTicker" placeholder="Ticker / Symbol (e.g. RELIANCE, APARINDS, AAPL)" style="flex: 2;" />
-              <button type="button" class="btn-sm btn-secondary" onclick="fetchSingleTickerPrice()" title="Auto-fetch market price for this ticker">🔍 Fetch Price</button>
+              <input type="text" id="tradeTicker" placeholder="Ticker / Instrument (e.g. APARINDS, RELIANCE, AAPL)" style="flex: 2;" />
+              <button type="button" class="btn-sm btn-secondary" onclick="fetchSingleTickerPrice()" title="Auto-fetch market price">🔍 Fetch Price</button>
             </div>
 
             <div style="display: flex; gap: 8px;">
-              <input type="text" id="tradePlatform" placeholder="Broker / Platform (Zerodha)" style="flex: 1;" />
-              <select id="tradeCurrency" style="width: 90px;">
-                <option value="INR">₹ INR</option>
-                <option value="USD">$ USD</option>
-              </select>
-            </div>
-
-            <div style="display: flex; gap: 8px;">
-              <input type="number" id="tradeQty" placeholder="Units / Qty" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
-              <input type="number" id="tradeBuyPrice" placeholder="Avg Cost / Buy Price" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
+              <input type="number" id="tradeQty" placeholder="Qty / Units" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
+              <input type="number" id="tradeBuyPrice" placeholder="Avg Buy Price" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
               <input type="number" id="tradeCurrentPrice" placeholder="Current Price (LTP)" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
             </div>
 
@@ -213,16 +197,16 @@
             </div>
 
             <div style="display: flex; gap: 8px;">
-              <button type="button" id="tradeSubmitBtn" onclick="saveTrade()" style="flex: 2;">Record Transaction</button>
+              <button type="button" id="tradeSubmitBtn" onclick="saveTrade()" style="flex: 2;">Record Line Item</button>
               <button type="button" id="tradeCancelBtn" onclick="cancelTradeEdit()" class="btn-secondary" style="flex: 1; display: none;">Cancel</button>
             </div>
           </div>
         </div>
 
-        <!-- Trade Summary Metrics -->
+        <!-- Ledger Summary -->
         <div class="card">
           <div class="row-between">
-            <h2>Ledger Aggregate Summary</h2>
+            <h2>Ledger Summary & Actions</h2>
             <button type="button" class="btn-sm btn-secondary" onclick="refreshAllQuotes()">🔄 Refresh All Live Prices</button>
           </div>
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0;">
@@ -241,13 +225,15 @@
         </div>
       </div>
 
-      <!-- Trade Table -->
+      <!-- Trade Table with Filter -->
       <div class="card">
-        <div class="row-between">
-          <h2>Holdings & Trade Item Ledger</h2>
-          <div style="display: flex; gap: 6px;">
-            <button type="button" class="btn-sm" onclick="syncTradesToHoldings()">⚡ Sync Current Values to Portfolio</button>
-            <button type="button" class="btn-sm btn-danger" onclick="clearAllTrades()">Clear Ledger</button>
+        <div class="row-between" style="flex-wrap: wrap; gap: 8px;">
+          <h2>All Line Items & Holdings</h2>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <select id="ledgerFilterAccount" onchange="renderTrades()" style="font-size:0.8rem; padding:4px 8px;">
+              <option value="">Filter by Account: All Accounts</option>
+            </select>
+            <button type="button" class="btn-sm btn-danger" onclick="clearAllTrades()">Clear All</button>
           </div>
         </div>
         <div style="overflow-x: auto;">
@@ -255,12 +241,13 @@
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Ticker / Scheme</th>
-                <th>Category (Broker)</th>
+                <th>Instrument / Ticker</th>
+                <th>Account (Sub-Cat)</th>
+                <th>Category</th>
                 <th>Qty</th>
-                <th>Avg Buy Price</th>
-                <th>Current Price</th>
-                <th>Total Value</th>
+                <th>Avg Cost</th>
+                <th>LTP</th>
+                <th>Current Val</th>
                 <th>P&L</th>
                 <th style="text-align: right;">Action</th>
               </tr>
@@ -273,7 +260,6 @@
 
     <!-- TAB 3: INCOME & EXPENSES -->
     <div id="viewCashflow" style="display: none;">
-      <!-- Month Filter for Review -->
       <div class="card" style="padding: 10px 16px;">
         <div class="row-between">
           <span style="font-weight: 600;">Monthly Cashflow Review:</span>
@@ -300,7 +286,6 @@
       </div>
 
       <div class="grid">
-        <!-- Cashflow Form -->
         <div class="card">
           <h2>Add Income / Expense Entry</h2>
           <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -327,7 +312,6 @@
           </div>
         </div>
 
-        <!-- Cashflow List -->
         <div class="card">
           <h2>Recorded Cashflow Entries</h2>
           <table id="cashflowTable">
@@ -346,6 +330,57 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- MODAL: DEDICATED SEPARATE PORTFOLIO ITEM VIEW -->
+  <div id="portfolioModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 999; padding: 20px; overflow-y: auto;">
+    <div style="max-width: 900px; margin: 40px auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; position: relative;">
+      <div class="row-between" style="margin-bottom: 16px;">
+        <div>
+          <h2 id="modalPortfolioTitle" style="margin: 0; color: var(--accent);">Account Details</h2>
+          <span id="modalPortfolioSubtitle" class="stat-label"></span>
+        </div>
+        <button type="button" class="btn-sm btn-secondary" onclick="closePortfolioModal()" style="font-size: 1.1rem; padding: 4px 12px;">✕ Close</button>
+      </div>
+
+      <!-- Metrics summary for this specific account -->
+      <div class="grid-three" style="margin-bottom: 16px;">
+        <div style="background: #0b1120; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+          <div class="stat-label">Total Invested Cost</div>
+          <div id="modalInvestedVal" class="plan-metric" style="color: var(--text);">₹0</div>
+        </div>
+        <div style="background: #0b1120; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+          <div class="stat-label">Current Market Value</div>
+          <div id="modalCurrentVal" class="plan-metric" style="color: var(--accent);">₹0</div>
+        </div>
+        <div style="background: #0b1120; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+          <div class="stat-label">Unrealized P&L</div>
+          <div id="modalPnlVal" class="plan-metric">₹0</div>
+        </div>
+      </div>
+
+      <div class="row-between" style="margin-bottom: 10px;">
+        <h3>Holdings / Items in this Account</h3>
+        <button type="button" class="btn-sm" onclick="jumpToLedgerForAccount()">+ Add New Item to This Account</button>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table id="modalItemsTable">
+          <thead>
+            <tr>
+              <th>Instrument</th>
+              <th>Qty</th>
+              <th>Avg Cost</th>
+              <th>LTP</th>
+              <th>Current Val</th>
+              <th>P&L</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script src="script.js"></script>
