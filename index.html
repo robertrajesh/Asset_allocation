@@ -88,7 +88,7 @@
             <h2>Goal-Based Portfolios</h2>
             <input type="hidden" id="goalEditId" value="" />
             <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;">
-              <input type="text" id="goalTitle" placeholder="Goal Name (e.g., Retirement, Child Higher Ed)" />
+              <input type="text" id="goalTitle" placeholder="Goal Name (e.g., Retirement, Education)" />
               
               <div style="display: flex; gap: 8px;">
                 <input type="number" id="goalCostToday" placeholder="Current Cost ₹" title="Cost of goal in today's money" oninput="calculateFutureTargetPreview()" style="flex: 1;" />
@@ -96,7 +96,7 @@
                 <input type="number" id="goalReturn" placeholder="Exp %" title="Expected Annual Return %" style="flex: 1;" />
               </div>
 
-              <!-- Real-time Inflation Adjusted Indicator -->
+              <!-- Inflation Adjusted Indicator -->
               <div id="inflationPreview" style="font-size: 0.8rem; color: #38bdf8; background: #0b1120; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);">
                 Target at 7% inflation: ₹0
               </div>
@@ -116,19 +116,10 @@
             <h2 id="holdingFormHeading">Add / Edit Investment Holding</h2>
             <input type="hidden" id="holdingEditId" value="" />
             <div style="display: flex; flex-direction: column; gap: 10px;">
-              <input type="text" id="holdingName" placeholder="Holding Name (e.g., Zerodha Demat Equity, SBI FD)" />
+              <input type="text" id="holdingName" placeholder="Holding Name (e.g., Zerodha Demat Equity, Schwab US)" />
               
               <div style="display: flex; gap: 8px;">
-                <select id="assetCategory" style="flex: 1;">
-                  <option value="Indian Stocks">Indian Stocks</option>
-                  <option value="US Stocks">US Stocks</option>
-                  <option value="Mutual Funds">Mutual Funds</option>
-                  <option value="Fixed Deposits">Fixed Deposits</option>
-                  <option value="Bonds">Bonds</option>
-                  <option value="Gold">Gold</option>
-                  <option value="Real Estate">Real Estate</option>
-                </select>
-
+                <select id="assetCategory" style="flex: 1;"></select>
                 <select id="holdingCurrency" style="width: 85px;">
                   <option value="INR">₹ INR</option>
                   <option value="USD">$ USD</option>
@@ -154,7 +145,7 @@
           <div class="card">
             <div class="row-between">
               <h2>Holdings Breakdown</h2>
-              <button type="button" class="btn-sm btn-secondary" onclick="syncTradesToHoldings()" title="Auto-aggregate your trade items into holdings">Auto-Sync From Trade Ledger</button>
+              <button type="button" class="btn-sm btn-secondary" onclick="syncTradesToHoldings()" title="Auto-aggregate all ledger items into holdings">Auto-Sync From Trade Ledger</button>
             </div>
             <table id="holdingsTable">
               <thead>
@@ -173,34 +164,48 @@
 
     <!-- TAB 2: TRANSACTIONS / TRADE LEDGER -->
     <div id="viewTransactions" style="display: none;">
+      
+      <!-- BULK CSV IMPORT CARD -->
+      <div class="card" style="border-left: 4px solid var(--accent);">
+        <div class="row-between" style="margin-bottom: 8px;">
+          <h2>Import Broker Holdings CSV (Optional)</h2>
+          <span style="font-size: 0.8rem; color: var(--muted);">Supports Zerodha Kite (.csv) & US Broker summaries</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+          <select id="importCategorySelect" style="flex: 1; min-width: 180px;" title="Category to assign imported items"></select>
+          <input type="file" id="portfolioCsvInput" accept=".csv" style="flex: 2; min-width: 220px;" />
+          <button type="button" onclick="handlePortfolioCsvUpload()" style="padding: 8px 16px;">Upload & Import</button>
+        </div>
+      </div>
+
       <div class="grid">
         <!-- New Trade Form -->
         <div class="card">
-          <h2 id="tradeFormHeading">Record Trade / Investment (e.g. Zerodha, FD, MF)</h2>
+          <h2 id="tradeFormHeading">Record Trade / Investment Item</h2>
           <input type="hidden" id="tradeEditId" value="" />
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <div style="display: flex; gap: 8px;">
               <input type="date" id="tradeDate" style="flex: 1;" />
-              <select id="tradeCategory" style="flex: 1;">
-                <option value="Indian Stocks">Indian Stocks (Zerodha)</option>
-                <option value="Mutual Funds">Mutual Funds</option>
-                <option value="US Stocks">US Stocks</option>
-                <option value="Bonds">Bonds</option>
-                <option value="Fixed Deposits">Fixed Deposits</option>
-                <option value="Gold">Gold</option>
-                <option value="Real Estate">Real Estate</option>
+              <select id="tradeCategory" style="flex: 1;" title="Primary category"></select>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="tradeTicker" placeholder="Ticker / Symbol (e.g. RELIANCE, APARINDS, AAPL)" style="flex: 2;" />
+              <button type="button" class="btn-sm btn-secondary" onclick="fetchSingleTickerPrice()" title="Auto-fetch market price for this ticker">🔍 Fetch Price</button>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="tradePlatform" placeholder="Broker / Platform (Zerodha)" style="flex: 1;" />
+              <select id="tradeCurrency" style="width: 90px;">
+                <option value="INR">₹ INR</option>
+                <option value="USD">$ USD</option>
               </select>
             </div>
 
             <div style="display: flex; gap: 8px;">
-              <input type="text" id="tradeTicker" placeholder="Ticker / Scheme (e.g. RELIANCE, Parag Parikh Flexi)" style="flex: 2;" />
-              <input type="text" id="tradePlatform" placeholder="Broker (Zerodha)" style="flex: 1;" />
-            </div>
-
-            <div style="display: flex; gap: 8px;">
               <input type="number" id="tradeQty" placeholder="Units / Qty" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
-              <input type="number" id="tradeBuyPrice" placeholder="Buy Price (₹)" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
-              <input type="number" id="tradeCurrentPrice" placeholder="Current Price (₹)" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
+              <input type="number" id="tradeBuyPrice" placeholder="Avg Cost / Buy Price" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
+              <input type="number" id="tradeCurrentPrice" placeholder="Current Price (LTP)" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
             </div>
 
             <div id="tradePreview" style="font-size: 0.8rem; color: #38bdf8; background: #0b1120; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);">
@@ -216,8 +221,11 @@
 
         <!-- Trade Summary Metrics -->
         <div class="card">
-          <h2>Trade Ledger Summary</h2>
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+          <div class="row-between">
+            <h2>Ledger Aggregate Summary</h2>
+            <button type="button" class="btn-sm btn-secondary" onclick="refreshAllQuotes()">🔄 Refresh All Live Prices</button>
+          </div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0;">
             <div style="background:#0b1120; padding:10px; border-radius:8px; border:1px solid var(--border);">
               <div class="stat-label">Total Capital Invested</div>
               <div class="plan-metric" id="totalTradeInvestedDisplay">₹0</div>
@@ -236,8 +244,11 @@
       <!-- Trade Table -->
       <div class="card">
         <div class="row-between">
-          <h2>Individual Assets / Holdings Ledger</h2>
-          <button type="button" class="btn-sm" onclick="syncTradesToHoldings()">⚡ Sync Current Values to Portfolio</button>
+          <h2>Holdings & Trade Item Ledger</h2>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="btn-sm" onclick="syncTradesToHoldings()">⚡ Sync Current Values to Portfolio</button>
+            <button type="button" class="btn-sm btn-danger" onclick="clearAllTrades()">Clear Ledger</button>
+          </div>
         </div>
         <div style="overflow-x: auto;">
           <table id="tradeTable">
@@ -245,9 +256,9 @@
               <tr>
                 <th>Date</th>
                 <th>Ticker / Scheme</th>
-                <th>Category / Broker</th>
+                <th>Category (Broker)</th>
                 <th>Qty</th>
-                <th>Buy Price</th>
+                <th>Avg Buy Price</th>
                 <th>Current Price</th>
                 <th>Total Value</th>
                 <th>P&L</th>
@@ -309,7 +320,7 @@
               <select id="cashflowCategory" style="flex: 1;"></select>
             </div>
 
-            <input type="text" id="cashflowDesc" placeholder="Description (e.g. Cisco Salary, House Rent, EMI)" />
+            <input type="text" id="cashflowDesc" placeholder="Description (e.g. Salary, Rent, EMI)" />
             <input type="number" id="cashflowAmount" placeholder="Amount (₹)" />
 
             <button type="button" onclick="addCashflowItem()">Record Entry</button>

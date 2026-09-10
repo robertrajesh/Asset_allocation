@@ -44,6 +44,27 @@ function getUsersDb() {
   return JSON.parse(localStorage.getItem('registered_users') || '{}');
 }
 
+// Sync category dropdowns from configured targets
+function populateCategoryDropdowns() {
+  const targetNames = (userData.targets || DEFAULT_TARGETS).map(t => t.name);
+
+  const assetCat = document.getElementById("assetCategory");
+  const tradeCat = document.getElementById("tradeCategory");
+  const importCat = document.getElementById("importCategorySelect");
+
+  [assetCat, tradeCat, importCat].forEach(select => {
+    if (!select) return;
+    const currentVal = select.value;
+    select.innerHTML = "";
+    targetNames.forEach(name => {
+      select.innerHTML += '<option value="' + name + '">' + name + '</option>';
+    });
+    if (currentVal && targetNames.includes(currentVal)) {
+      select.value = currentVal;
+    }
+  });
+}
+
 // --- Navigation Tabs ---
 window.switchTab = function (tab) {
   const pView = document.getElementById("viewPortfolio");
@@ -67,6 +88,7 @@ window.switchTab = function (tab) {
     setDefaultCashflowDate();
     renderCashflow();
   } else if (tab === "transactions") {
+    populateCategoryDropdowns();
     setDefaultTradeDate();
     renderTrades();
   }
@@ -162,6 +184,7 @@ function loginUser(email, data) {
   document.getElementById("appScreen").style.display = "block";
   document.getElementById("userGreeting").innerText = email;
 
+  populateCategoryDropdowns();
   setDefaultCashflowDate();
   setDefaultTradeDate();
   updateCashflowCategories();
@@ -386,27 +409,239 @@ window.calculateTradePreview = function () {
   const qty = parseFloat(document.getElementById("tradeQty").value) || 0;
   const buy = parseFloat(document.getElementById("tradeBuyPrice").value) || 0;
   const curr = parseFloat(document.getElementById("tradeCurrentPrice").value) || buy;
+  const currType = document.getElementById("tradeCurrency").value;
+  const sym = currType === "USD" ? "$" : "₹";
 
   const invested = qty * buy;
   const currentVal = qty * curr;
   const pnl = currentVal - invested;
   const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
 
-  const sign = pnl >= 0 ? "+₹" : "-₹";
+  const sign = pnl >= 0 ? "+" + sym : "-" + sym;
   const preview = document.getElementById("tradePreview");
   if (preview) {
-    preview.innerText = "Invested: ₹" + Math.round(invested).toLocaleString('en-IN') +
-      " • Current: ₹" + Math.round(currentVal).toLocaleString('en-IN') +
-      " • P&L: " + sign + Math.round(Math.abs(pnl)).toLocaleString('en-IN') + " (" + pnlPct.toFixed(1) + "%)";
+    preview.innerText = "Invested: " + sym + Math.round(invested).toLocaleString() +
+      " • Current: " + sym + Math.round(currentVal).toLocaleString() +
+      " • P&L: " + sign + Math.round(Math.abs(pnl)).toLocaleString() + " (" + pnlPct.toFixed(1) + "%)";
   }
 };
+
+// --- Live Ticker Price Discovery ---
+async function fetchPriceForSymbol(symbol, category) {
+  const sym = symbol.trim().toUpperCase();
+  if (!sym) return null;
+
+  try {
+    // Check Indian NSE stocks via Yahoo Finance / Google Finance public CORS proxy
+    const querySymbol = (category === "Indian Stocks" && !sym.includes(".")) ? sym + ".NS" : sym;
+    const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(querySymbol) + "?interval=1d&range=1d";
+    
+    // Use an open proxy to avoid browser CORS blocks
+    const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
+    const res = await fetch(proxyUrl);
+    const json = await res.json();
+    const data = JSON.parse(json.contents);
+    const quote = data.chart.result[0].meta.regularMarketPrice;
+    if (quote && !isNaN(quote)) {
+      return parseFloat(quote);
+    }
+  } catch (e) {
+    console.warn("Live fetch failed for " + symbol + ", fallback to user entry:", e);
+  }
+  return null;
+}
+
+window.fetchSingleTickerPrice = async function () {
+  const ticker = document.getElementById("tradeTicker").value.trim();
+  const category = document.getElementById("tradeCategory").value;
+  if (!ticker) {
+    alert("Please enter a ticker symbol first.");
+    return;
+  }
+
+  const btn = event.target;
+  const origText = btn.innerText;
+  btn.innerText = "Fetching...";
+  const price = await fetchPriceForSymbol(ticker, category);
+  btn.innerText = origText;
+
+  if (price) {
+    document.getElementById("tradeCurrentPrice").value = price.toFixed(2);
+    calculateTradePreview();
+    alert("Fetched live market price for " + ticker + ": " + price.toFixed(2));
+  } else {
+    alert("Could not automatically retrieve market price for '" + ticker + "'. You can enter the LTP manually.");
+  }
+};
+
+window.refreshAllQuotes = async function () {
+  if (!userData.trades || userData.trades.length === 0) {
+    alert("No trade items to refresh.");
+    return;
+  }
+
+  let updatedCount = 0;
+  for (let t of userData.trades) {
+    if (t.ticker && (t.category === "Indian Stocks" || t.category === "US Stocks")) {
+      const price = await fetchPriceForSymbol(t.ticker, t.category);
+      if (price) {
+        t.currentPrice = price;
+        updatedCount++;
+      }
+    }
+  }
+
+  persistData();
+  renderTrades();
+  alert("Refreshed prices for " + updatedCount + " holdings!");
+};
+
+// --- CSV Import Engine for Zerodha & Broker Exports ---
+window.handlePortfolioCsvUpload = function () {
+  const fileInput = document.getElementById("portfolioCsvInput");
+  const selectedCategory = document.getElementById("importCategorySelect").value;
+  const file = fileInput.files[0];
+
+  if (!file) {
+    alert("Please select a CSV file to upload.");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const text = e.target.result;
+    parseAndImportCsv(text, selectedCategory);
+  };
+  reader.readAsText(file);
+};
+
+function parseAndImportCsv(csvText, category) {
+  const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) {
+    alert("CSV file appears to be empty.");
+    return;
+  }
+
+  // Detect File Type 1: Zerodha Kite Holdings CSV (sample2.csv format)
+  const headerIdx = lines.findIndex(l => l.includes("Instrument") && (l.includes("Qty") || l.includes("LTP")));
+  
+  if (headerIdx !== -1) {
+    let imported = 0;
+    const today = new Date().toISOString().split("T")[0];
+
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      // Split CSV allowing quotes
+      const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.replace(/^"|"$/g, '').trim());
+      if (row.length < 5 || !row[0]) continue;
+
+      const ticker = row[0];
+      const qty = parseFloat(row[1].replace(/,/g, ''));
+      const avgCost = parseFloat(row[2].replace(/,/g, ''));
+      const ltp = parseFloat(row[3].replace(/,/g, '')) || avgCost;
+
+      if (!isNaN(qty) && qty > 0) {
+        // Upsert by ticker in this category
+        const existing = userData.trades.find(t => t.ticker.toUpperCase() === ticker.toUpperCase() && t.category === category);
+        if (existing) {
+          existing.qty = qty;
+          existing.buyPrice = avgCost;
+          existing.currentPrice = ltp;
+          existing.date = today;
+        } else {
+          userData.trades.push({
+            id: Date.now() + Math.floor(Math.random() * 10000),
+            date: today,
+            category: category,
+            ticker: ticker,
+            platform: "Zerodha",
+            currency: "INR",
+            qty: qty,
+            buyPrice: avgCost,
+            currentPrice: ltp
+          });
+        }
+        imported++;
+      }
+    }
+
+    persistData();
+    renderTrades();
+    alert("Successfully imported " + imported + " holdings from Zerodha Kite CSV into '" + category + "'!");
+    return;
+  }
+
+  // Detect File Type 2: Value Curve / Summary CSV (sample1.csv)
+  if (csvText.includes("Value_curve report") || csvText.includes("Date,Equity,Mutual Funds")) {
+    // Find last summary row
+    const dataLines = lines.filter(l => l.match(/^\d{4}-\d{2}-\d{2}/));
+    if (dataLines.length > 0) {
+      const lastLine = dataLines[dataLines.length - 1];
+      const parts = lastLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.replace(/^"|"$/g, '').replace(/,/g, '').trim());
+      const equityVal = parseFloat(parts[1]) || 0;
+      const mfVal = parseFloat(parts[2]) || 0;
+      const cashVal = parseFloat(parts[3]) || 0;
+
+      if (equityVal > 0) updateHoldingValue("Zerodha Equities", "Indian Stocks", "INR", equityVal);
+      if (mfVal > 0) updateHoldingValue("Zerodha Mutual Funds", "Mutual Funds", "INR", mfVal);
+      if (cashVal > 0) updateHoldingValue("Zerodha Trading Cash", "Fixed Deposits", "INR", cashVal);
+
+      persistData();
+      alert("Successfully imported Zerodha summary values into Portfolio Holdings!");
+      return;
+    }
+  }
+
+  // Detect File Type 3: U.S. Broker Balance Summary (USA_SAMPLE1.CSV)
+  if (csvText.includes("Balances for account") || csvText.includes("Securities") || csvText.includes("Account Value")) {
+    let securitiesVal = 0;
+    let cashVal = 0;
+
+    lines.forEach(line => {
+      const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.replace(/^"|"$/g, '').trim());
+      if (parts[0] && parts[1]) {
+        const cleanVal = parseFloat(parts[1].replace(/[$,]/g, '')) || 0;
+        if (parts[0].includes("Securities") || parts[0].includes("Market Value")) {
+          securitiesVal = cleanVal;
+        } else if (parts[0].includes("Cash Balance")) {
+          cashVal = cleanVal;
+        }
+      }
+    });
+
+    if (securitiesVal > 0) updateHoldingValue("US Broker Equities", "US Stocks", "USD", securitiesVal);
+    if (cashVal > 0) updateHoldingValue("US Broker Cash", "Fixed Deposits", "USD", cashVal);
+
+    persistData();
+    alert("Successfully imported US Broker balance values ($" + securitiesVal.toLocaleString() + ") into Portfolio Holdings!");
+    return;
+  }
+
+  alert("Could not recognize CSV format. Make sure you are uploading a Zerodha Kite Holdings CSV or standard broker export.");
+}
+
+function updateHoldingValue(name, category, currency, value) {
+  const existing = userData.holdings.find(h => h.name === name);
+  if (existing) {
+    existing.value = Math.round(value);
+  } else {
+    userData.holdings.push({
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      name: name,
+      category: category,
+      currency: currency,
+      value: Math.round(value),
+      goalId: null
+    });
+  }
+}
 
 window.saveTrade = function () {
   const id = document.getElementById("tradeEditId").value;
   const date = document.getElementById("tradeDate").value || new Date().toISOString().split("T")[0];
   const category = document.getElementById("tradeCategory").value;
-  const ticker = document.getElementById("tradeTicker").value.trim();
+  const ticker = document.getElementById("tradeTicker").value.trim().toUpperCase();
   const platform = document.getElementById("tradePlatform").value.trim() || "Zerodha";
+  const currency = document.getElementById("tradeCurrency").value;
   const qty = parseFloat(document.getElementById("tradeQty").value);
   const buyPrice = parseFloat(document.getElementById("tradeBuyPrice").value);
   const currentPrice = parseFloat(document.getElementById("tradeCurrentPrice").value) || buyPrice;
@@ -423,6 +658,7 @@ window.saveTrade = function () {
       trade.category = category;
       trade.ticker = ticker;
       trade.platform = platform;
+      trade.currency = currency;
       trade.qty = qty;
       trade.buyPrice = buyPrice;
       trade.currentPrice = currentPrice;
@@ -434,6 +670,7 @@ window.saveTrade = function () {
       category: category,
       ticker: ticker,
       platform: platform,
+      currency: currency,
       qty: qty,
       buyPrice: buyPrice,
       currentPrice: currentPrice
@@ -454,6 +691,7 @@ window.editTrade = function (id) {
   document.getElementById("tradeCategory").value = trade.category;
   document.getElementById("tradeTicker").value = trade.ticker;
   document.getElementById("tradePlatform").value = trade.platform;
+  document.getElementById("tradeCurrency").value = trade.currency || "INR";
   document.getElementById("tradeQty").value = trade.qty;
   document.getElementById("tradeBuyPrice").value = trade.buyPrice;
   document.getElementById("tradeCurrentPrice").value = trade.currentPrice;
@@ -471,7 +709,7 @@ window.cancelTradeEdit = function () {
   document.getElementById("tradeQty").value = "";
   document.getElementById("tradeBuyPrice").value = "";
   document.getElementById("tradeCurrentPrice").value = "";
-  document.getElementById("tradeFormHeading").innerText = "Record Trade / Investment (e.g. Zerodha, FD, MF)";
+  document.getElementById("tradeFormHeading").innerText = "Record Trade / Investment Item";
   document.getElementById("tradeSubmitBtn").innerText = "Record Transaction";
   document.getElementById("tradeCancelBtn").style.display = "none";
   setDefaultTradeDate();
@@ -484,21 +722,29 @@ window.removeTrade = function (id) {
   renderTrades();
 };
 
-// Auto-aggregate trades by category and sync them directly into overall portfolio holdings
+window.clearAllTrades = function () {
+  if (confirm("Are you sure you want to clear all items from your trade ledger?")) {
+    userData.trades = [];
+    persistData();
+    renderTrades();
+  }
+};
+
 window.syncTradesToHoldings = function () {
   if (!userData.trades || userData.trades.length === 0) {
-    alert("No trade items found to sync. Add some trades first!");
+    alert("No trade items found to sync. Import a CSV or add trades first!");
     return;
   }
 
   const categoryTotals = {};
   userData.trades.forEach(t => {
     const totalVal = t.qty * (t.currentPrice || t.buyPrice);
-    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + totalVal;
+    const inrVal = t.currency === "USD" ? totalVal * usdToInrRate : totalVal;
+    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + inrVal;
   });
 
   Object.keys(categoryTotals).forEach(cat => {
-    const holdingName = cat + " (Ledger Sync)";
+    const holdingName = cat + " (Ledger Aggregated)";
     const existing = userData.holdings.find(h => h.name === holdingName && h.category === cat);
     if (existing) {
       existing.value = Math.round(categoryTotals[cat]);
@@ -515,7 +761,7 @@ window.syncTradesToHoldings = function () {
   });
 
   persistData();
-  alert("Successfully synced trade ledger current values into Portfolio Holdings!");
+  alert("Successfully synchronized current trade ledger market values into Portfolio Holdings!");
 };
 
 function renderTrades() {
@@ -523,30 +769,34 @@ function renderTrades() {
   if (!tbody) return;
   tbody.innerHTML = "";
 
-  let totalInvested = 0;
-  let totalCurrent = 0;
+  let totalInvestedINR = 0;
+  let totalCurrentINR = 0;
 
   (userData.trades || []).forEach(t => {
+    const isUSD = t.currency === "USD";
+    const multiplier = isUSD ? usdToInrRate : 1;
+    const sym = isUSD ? "$" : "₹";
+
     const invested = t.qty * t.buyPrice;
     const current = t.qty * (t.currentPrice || t.buyPrice);
     const pnl = current - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
 
-    totalInvested += invested;
-    totalCurrent += current;
+    totalInvestedINR += invested * multiplier;
+    totalCurrentINR += current * multiplier;
 
     const pnlColor = pnl >= 0 ? "color: #4ade80;" : "color: #f87171;";
-    const pnlSign = pnl >= 0 ? "+₹" : "-₹";
+    const pnlSign = pnl >= 0 ? "+" + sym : "-" + sym;
 
     tbody.innerHTML += '<tr>' +
       '<td><span class="stat-label">' + (t.date || "-") + '</span></td>' +
       '<td><strong>' + t.ticker + '</strong></td>' +
       '<td><span class="stat-label">' + t.category + ' (' + (t.platform || "Zerodha") + ')</span></td>' +
       '<td>' + t.qty + '</td>' +
-      '<td>₹' + Number(t.buyPrice).toLocaleString('en-IN') + '</td>' +
-      '<td>₹' + Number(t.currentPrice || t.buyPrice).toLocaleString('en-IN') + '</td>' +
-      '<td>₹' + Math.round(current).toLocaleString('en-IN') + '</td>' +
-      '<td style="' + pnlColor + ' font-weight:600;">' + pnlSign + Math.round(Math.abs(pnl)).toLocaleString('en-IN') + ' (' + pnlPct.toFixed(1) + '%)</td>' +
+      '<td>' + sym + Number(t.buyPrice).toLocaleString() + '</td>' +
+      '<td>' + sym + Number(t.currentPrice || t.buyPrice).toLocaleString() + '</td>' +
+      '<td>' + sym + Math.round(current).toLocaleString() + (isUSD ? '<br/><span class="stat-label">≈ ₹' + Math.round(current * multiplier).toLocaleString('en-IN') + '</span>' : '') + '</td>' +
+      '<td style="' + pnlColor + ' font-weight:600;">' + pnlSign + Math.round(Math.abs(pnl)).toLocaleString() + ' (' + pnlPct.toFixed(1) + '%)</td>' +
       '<td style="text-align: right;">' +
         '<button type="button" class="btn-sm btn-secondary" onclick="editTrade(' + t.id + ')">Edit</button> ' +
         '<button type="button" class="btn-sm btn-danger" onclick="removeTrade(' + t.id + ')">×</button>' +
@@ -554,23 +804,23 @@ function renderTrades() {
     '</tr>';
   });
 
-  const totPnl = totalCurrent - totalInvested;
-  const totPnlPct = totalInvested > 0 ? (totPnl / totalInvested) * 100 : 0;
+  const totPnlINR = totalCurrentINR - totalInvestedINR;
+  const totPnlPct = totalInvestedINR > 0 ? (totPnlINR / totalInvestedINR) * 100 : 0;
 
   const invEl = document.getElementById("totalTradeInvestedDisplay");
   const curEl = document.getElementById("totalTradeCurrentDisplay");
   const pnlEl = document.getElementById("totalTradePnlDisplay");
 
-  if (invEl) invEl.innerText = "₹" + Math.round(totalInvested).toLocaleString('en-IN');
-  if (curEl) curEl.innerText = "₹" + Math.round(totalCurrent).toLocaleString('en-IN');
+  if (invEl) invEl.innerText = "₹" + Math.round(totalInvestedINR).toLocaleString('en-IN');
+  if (curEl) curEl.innerText = "₹" + Math.round(totalCurrentINR).toLocaleString('en-IN');
   if (pnlEl) {
-    const sign = totPnl >= 0 ? "+₹" : "-₹";
-    pnlEl.innerText = "Unrealized P&L: " + sign + Math.round(Math.abs(totPnl)).toLocaleString('en-IN') + " (" + totPnlPct.toFixed(1) + "%)";
-    pnlEl.style.color = totPnl >= 0 ? "#4ade80" : "#f87171";
+    const sign = totPnlINR >= 0 ? "+₹" : "-₹";
+    pnlEl.innerText = "Unrealized P&L: " + sign + Math.round(Math.abs(totPnlINR)).toLocaleString('en-IN') + " (" + totPnlPct.toFixed(1) + "%)";
+    pnlEl.style.color = totPnlINR >= 0 ? "#4ade80" : "#f87171";
   }
 }
 
-// --- Income and Expense Management with Dates & Monthly Review ---
+// --- Income & Expense Cashflow Management ---
 function setDefaultCashflowDate() {
   const dateEl = document.getElementById("cashflowDate");
   const monthEl = document.getElementById("cashflowMonthFilter");
@@ -644,7 +894,7 @@ function renderCashflow() {
 
   const filtered = (userData.cashflow || []).filter(c => {
     if (!monthFilter) return true;
-    if (c.frequency === "monthly") return true; // Monthly recurring items appear in all monthly views
+    if (c.frequency === "monthly") return true;
     return c.date && c.date.startsWith(monthFilter);
   });
 
@@ -872,7 +1122,7 @@ function render() {
   renderTrades();
 }
 
-// Restore active user session on startup
+// Restore active session
 const active = sessionStorage.getItem('current_user');
 if (active && getUsersDb()[active]) {
   loginUser(active, getUsersDb()[active]);
