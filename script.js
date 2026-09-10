@@ -17,11 +17,12 @@ let userData = {
   targets: DEFAULT_TARGETS,
   holdings: [],
   goals: [],
-  cashflow: []
+  cashflow: [],
+  trades: []
 };
 let usdToInrRate = 84.0;
 
-// --- Live Currency Exchange ---
+// --- Live Exchange Rate ---
 async function fetchLiveExchangeRate() {
   try {
     const res = await fetch("https://open.er-api.com/v6/latest/USD");
@@ -46,23 +47,28 @@ function getUsersDb() {
 // --- Navigation Tabs ---
 window.switchTab = function (tab) {
   const pView = document.getElementById("viewPortfolio");
+  const tView = document.getElementById("viewTransactions");
   const cView = document.getElementById("viewCashflow");
+
   const pBtn = document.getElementById("tabBtnPortfolio");
+  const tBtn = document.getElementById("tabBtnTransactions");
   const cBtn = document.getElementById("tabBtnCashflow");
 
-  if (!pView || !cView || !pBtn || !cBtn) return;
+  pView.style.display = tab === "portfolio" ? "block" : "none";
+  tView.style.display = tab === "transactions" ? "block" : "none";
+  cView.style.display = tab === "cashflow" ? "block" : "none";
 
-  if (tab === "portfolio") {
-    pView.style.display = "block";
-    cView.style.display = "none";
-    pBtn.classList.add("active");
-    cBtn.classList.remove("active");
-  } else {
-    pView.style.display = "none";
-    cView.style.display = "block";
-    pBtn.classList.remove("active");
-    cBtn.classList.add("active");
+  pBtn.classList.toggle("active", tab === "portfolio");
+  tBtn.classList.toggle("active", tab === "transactions");
+  cBtn.classList.toggle("active", tab === "cashflow");
+
+  if (tab === "cashflow") {
     updateCashflowCategories();
+    setDefaultCashflowDate();
+    renderCashflow();
+  } else if (tab === "transactions") {
+    setDefaultTradeDate();
+    renderTrades();
   }
 };
 
@@ -92,7 +98,14 @@ window.handleAuth = function (isSignUp) {
       errorEl.innerText = "Account already exists. Click Login.";
       return;
     }
-    users[email] = { password: password, targets: DEFAULT_TARGETS, holdings: [], goals: [], cashflow: [] };
+    users[email] = {
+      password: password,
+      targets: DEFAULT_TARGETS,
+      holdings: [],
+      goals: [],
+      cashflow: [],
+      trades: []
+    };
     localStorage.setItem('registered_users', JSON.stringify(users));
     loginUser(email, users[email]);
   } else {
@@ -124,7 +137,7 @@ window.sendPasswordReset = function () {
     return;
   }
 
-  const newPass = prompt("Password recovery for " + email + ":\nEnter your new password (minimum 6 characters):");
+  const newPass = prompt("Password recovery for " + email + ":\nEnter your new password (min 6 characters):");
   if (newPass && newPass.length >= 6) {
     users[email].password = newPass;
     localStorage.setItem('registered_users', JSON.stringify(users));
@@ -137,17 +150,20 @@ window.sendPasswordReset = function () {
 
 function loginUser(email, data) {
   currentUser = email;
-  // Fallbacks guarantee backward compatibility for existing user accounts
   userData = {
     targets: Array.isArray(data.targets) ? data.targets : DEFAULT_TARGETS,
     holdings: Array.isArray(data.holdings) ? data.holdings : [],
     goals: Array.isArray(data.goals) ? data.goals : [],
-    cashflow: Array.isArray(data.cashflow) ? data.cashflow : []
+    cashflow: Array.isArray(data.cashflow) ? data.cashflow : [],
+    trades: Array.isArray(data.trades) ? data.trades : []
   };
   sessionStorage.setItem('current_user', email);
   document.getElementById("authScreen").style.display = "none";
   document.getElementById("appScreen").style.display = "block";
   document.getElementById("userGreeting").innerText = email;
+
+  setDefaultCashflowDate();
+  setDefaultTradeDate();
   updateCashflowCategories();
   fetchLiveExchangeRate();
   render();
@@ -227,7 +243,6 @@ window.saveGoal = function () {
     return;
   }
 
-  // Future target compounded by 7% inflation
   const targetFuture = costToday * Math.pow(1 + INFLATION_RATE, years);
 
   if (id) {
@@ -290,8 +305,9 @@ window.removeGoal = function (id) {
   persistData();
 };
 
-// --- Holdings ---
-window.addHolding = function () {
+// --- Holdings with EDIT Functionality ---
+window.saveHolding = function () {
+  const id = document.getElementById("holdingEditId").value;
   const name = document.getElementById("holdingName").value.trim();
   const category = document.getElementById("assetCategory").value;
   const currency = document.getElementById("holdingCurrency").value;
@@ -303,10 +319,54 @@ window.addHolding = function () {
     return;
   }
 
-  userData.holdings.push({ id: Date.now(), name: name, category: category, currency: currency, value: value, goalId: goalId });
+  if (id) {
+    const holding = userData.holdings.find(h => h.id == id);
+    if (holding) {
+      holding.name = name;
+      holding.category = category;
+      holding.currency = currency;
+      holding.value = value;
+      holding.goalId = goalId;
+    }
+  } else {
+    userData.holdings.push({
+      id: Date.now(),
+      name: name,
+      category: category,
+      currency: currency,
+      value: value,
+      goalId: goalId
+    });
+  }
+
+  cancelHoldingEdit();
+  persistData();
+};
+
+window.editHolding = function (id) {
+  const holding = userData.holdings.find(h => h.id == id);
+  if (!holding) return;
+
+  document.getElementById("holdingEditId").value = holding.id;
+  document.getElementById("holdingName").value = holding.name;
+  document.getElementById("assetCategory").value = holding.category;
+  document.getElementById("holdingCurrency").value = holding.currency;
+  document.getElementById("holdingValue").value = holding.value;
+  document.getElementById("holdingGoal").value = holding.goalId || "";
+
+  document.getElementById("holdingFormHeading").innerText = "Edit Holding";
+  document.getElementById("holdingSubmitBtn").innerText = "Update Holding";
+  document.getElementById("holdingCancelBtn").style.display = "inline-block";
+};
+
+window.cancelHoldingEdit = function () {
+  document.getElementById("holdingEditId").value = "";
   document.getElementById("holdingName").value = "";
   document.getElementById("holdingValue").value = "";
-  persistData();
+  document.getElementById("holdingGoal").value = "";
+  document.getElementById("holdingFormHeading").innerText = "Add / Edit Investment Holding";
+  document.getElementById("holdingSubmitBtn").innerText = "Add to Portfolio";
+  document.getElementById("holdingCancelBtn").style.display = "none";
 };
 
 window.removeHolding = function (id) {
@@ -314,7 +374,220 @@ window.removeHolding = function (id) {
   persistData();
 };
 
-// --- Income and Expense Management ---
+// --- Transactions / Trade Ledger Management ---
+function setDefaultTradeDate() {
+  const el = document.getElementById("tradeDate");
+  if (el && !el.value) {
+    el.value = new Date().toISOString().split("T")[0];
+  }
+}
+
+window.calculateTradePreview = function () {
+  const qty = parseFloat(document.getElementById("tradeQty").value) || 0;
+  const buy = parseFloat(document.getElementById("tradeBuyPrice").value) || 0;
+  const curr = parseFloat(document.getElementById("tradeCurrentPrice").value) || buy;
+
+  const invested = qty * buy;
+  const currentVal = qty * curr;
+  const pnl = currentVal - invested;
+  const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+
+  const sign = pnl >= 0 ? "+₹" : "-₹";
+  const preview = document.getElementById("tradePreview");
+  if (preview) {
+    preview.innerText = "Invested: ₹" + Math.round(invested).toLocaleString('en-IN') +
+      " • Current: ₹" + Math.round(currentVal).toLocaleString('en-IN') +
+      " • P&L: " + sign + Math.round(Math.abs(pnl)).toLocaleString('en-IN') + " (" + pnlPct.toFixed(1) + "%)";
+  }
+};
+
+window.saveTrade = function () {
+  const id = document.getElementById("tradeEditId").value;
+  const date = document.getElementById("tradeDate").value || new Date().toISOString().split("T")[0];
+  const category = document.getElementById("tradeCategory").value;
+  const ticker = document.getElementById("tradeTicker").value.trim();
+  const platform = document.getElementById("tradePlatform").value.trim() || "Zerodha";
+  const qty = parseFloat(document.getElementById("tradeQty").value);
+  const buyPrice = parseFloat(document.getElementById("tradeBuyPrice").value);
+  const currentPrice = parseFloat(document.getElementById("tradeCurrentPrice").value) || buyPrice;
+
+  if (!ticker || isNaN(qty) || qty <= 0 || isNaN(buyPrice) || buyPrice < 0) {
+    alert("Please enter a valid ticker, quantity, and buy price.");
+    return;
+  }
+
+  if (id) {
+    const trade = userData.trades.find(t => t.id == id);
+    if (trade) {
+      trade.date = date;
+      trade.category = category;
+      trade.ticker = ticker;
+      trade.platform = platform;
+      trade.qty = qty;
+      trade.buyPrice = buyPrice;
+      trade.currentPrice = currentPrice;
+    }
+  } else {
+    userData.trades.push({
+      id: Date.now(),
+      date: date,
+      category: category,
+      ticker: ticker,
+      platform: platform,
+      qty: qty,
+      buyPrice: buyPrice,
+      currentPrice: currentPrice
+    });
+  }
+
+  cancelTradeEdit();
+  persistData();
+  renderTrades();
+};
+
+window.editTrade = function (id) {
+  const trade = userData.trades.find(t => t.id == id);
+  if (!trade) return;
+
+  document.getElementById("tradeEditId").value = trade.id;
+  document.getElementById("tradeDate").value = trade.date;
+  document.getElementById("tradeCategory").value = trade.category;
+  document.getElementById("tradeTicker").value = trade.ticker;
+  document.getElementById("tradePlatform").value = trade.platform;
+  document.getElementById("tradeQty").value = trade.qty;
+  document.getElementById("tradeBuyPrice").value = trade.buyPrice;
+  document.getElementById("tradeCurrentPrice").value = trade.currentPrice;
+
+  document.getElementById("tradeFormHeading").innerText = "Edit Trade Item";
+  document.getElementById("tradeSubmitBtn").innerText = "Update Transaction";
+  document.getElementById("tradeCancelBtn").style.display = "inline-block";
+  calculateTradePreview();
+};
+
+window.cancelTradeEdit = function () {
+  document.getElementById("tradeEditId").value = "";
+  document.getElementById("tradeTicker").value = "";
+  document.getElementById("tradePlatform").value = "";
+  document.getElementById("tradeQty").value = "";
+  document.getElementById("tradeBuyPrice").value = "";
+  document.getElementById("tradeCurrentPrice").value = "";
+  document.getElementById("tradeFormHeading").innerText = "Record Trade / Investment (e.g. Zerodha, FD, MF)";
+  document.getElementById("tradeSubmitBtn").innerText = "Record Transaction";
+  document.getElementById("tradeCancelBtn").style.display = "none";
+  setDefaultTradeDate();
+  calculateTradePreview();
+};
+
+window.removeTrade = function (id) {
+  userData.trades = userData.trades.filter(t => t.id !== id);
+  persistData();
+  renderTrades();
+};
+
+// Auto-aggregate trades by category and sync them directly into overall portfolio holdings
+window.syncTradesToHoldings = function () {
+  if (!userData.trades || userData.trades.length === 0) {
+    alert("No trade items found to sync. Add some trades first!");
+    return;
+  }
+
+  const categoryTotals = {};
+  userData.trades.forEach(t => {
+    const totalVal = t.qty * (t.currentPrice || t.buyPrice);
+    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + totalVal;
+  });
+
+  Object.keys(categoryTotals).forEach(cat => {
+    const holdingName = cat + " (Ledger Sync)";
+    const existing = userData.holdings.find(h => h.name === holdingName && h.category === cat);
+    if (existing) {
+      existing.value = Math.round(categoryTotals[cat]);
+    } else {
+      userData.holdings.push({
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        name: holdingName,
+        category: cat,
+        currency: "INR",
+        value: Math.round(categoryTotals[cat]),
+        goalId: null
+      });
+    }
+  });
+
+  persistData();
+  alert("Successfully synced trade ledger current values into Portfolio Holdings!");
+};
+
+function renderTrades() {
+  const tbody = document.querySelector("#tradeTable tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  let totalInvested = 0;
+  let totalCurrent = 0;
+
+  (userData.trades || []).forEach(t => {
+    const invested = t.qty * t.buyPrice;
+    const current = t.qty * (t.currentPrice || t.buyPrice);
+    const pnl = current - invested;
+    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+
+    totalInvested += invested;
+    totalCurrent += current;
+
+    const pnlColor = pnl >= 0 ? "color: #4ade80;" : "color: #f87171;";
+    const pnlSign = pnl >= 0 ? "+₹" : "-₹";
+
+    tbody.innerHTML += '<tr>' +
+      '<td><span class="stat-label">' + (t.date || "-") + '</span></td>' +
+      '<td><strong>' + t.ticker + '</strong></td>' +
+      '<td><span class="stat-label">' + t.category + ' (' + (t.platform || "Zerodha") + ')</span></td>' +
+      '<td>' + t.qty + '</td>' +
+      '<td>₹' + Number(t.buyPrice).toLocaleString('en-IN') + '</td>' +
+      '<td>₹' + Number(t.currentPrice || t.buyPrice).toLocaleString('en-IN') + '</td>' +
+      '<td>₹' + Math.round(current).toLocaleString('en-IN') + '</td>' +
+      '<td style="' + pnlColor + ' font-weight:600;">' + pnlSign + Math.round(Math.abs(pnl)).toLocaleString('en-IN') + ' (' + pnlPct.toFixed(1) + '%)</td>' +
+      '<td style="text-align: right;">' +
+        '<button type="button" class="btn-sm btn-secondary" onclick="editTrade(' + t.id + ')">Edit</button> ' +
+        '<button type="button" class="btn-sm btn-danger" onclick="removeTrade(' + t.id + ')">×</button>' +
+      '</td>' +
+    '</tr>';
+  });
+
+  const totPnl = totalCurrent - totalInvested;
+  const totPnlPct = totalInvested > 0 ? (totPnl / totalInvested) * 100 : 0;
+
+  const invEl = document.getElementById("totalTradeInvestedDisplay");
+  const curEl = document.getElementById("totalTradeCurrentDisplay");
+  const pnlEl = document.getElementById("totalTradePnlDisplay");
+
+  if (invEl) invEl.innerText = "₹" + Math.round(totalInvested).toLocaleString('en-IN');
+  if (curEl) curEl.innerText = "₹" + Math.round(totalCurrent).toLocaleString('en-IN');
+  if (pnlEl) {
+    const sign = totPnl >= 0 ? "+₹" : "-₹";
+    pnlEl.innerText = "Unrealized P&L: " + sign + Math.round(Math.abs(totPnl)).toLocaleString('en-IN') + " (" + totPnlPct.toFixed(1) + "%)";
+    pnlEl.style.color = totPnl >= 0 ? "#4ade80" : "#f87171";
+  }
+}
+
+// --- Income and Expense Management with Dates & Monthly Review ---
+function setDefaultCashflowDate() {
+  const dateEl = document.getElementById("cashflowDate");
+  const monthEl = document.getElementById("cashflowMonthFilter");
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const monthStr = today.toISOString().slice(0, 7);
+
+  if (dateEl && !dateEl.value) dateEl.value = todayStr;
+  if (monthEl && !monthEl.value) monthEl.value = monthStr;
+}
+
+window.resetMonthFilter = function () {
+  const monthEl = document.getElementById("cashflowMonthFilter");
+  if (monthEl) monthEl.value = "";
+  renderCashflow();
+};
+
 window.updateCashflowCategories = function () {
   const typeEl = document.getElementById("cashflowType");
   const catSelect = document.getElementById("cashflowCategory");
@@ -329,30 +602,87 @@ window.updateCashflowCategories = function () {
 };
 
 window.addCashflowItem = function () {
+  const date = document.getElementById("cashflowDate").value || new Date().toISOString().split("T")[0];
+  const frequency = document.getElementById("cashflowFrequency").value;
   const type = document.getElementById("cashflowType").value;
   const category = document.getElementById("cashflowCategory").value;
   const desc = document.getElementById("cashflowDesc").value.trim() || category;
   const amount = parseFloat(document.getElementById("cashflowAmount").value);
 
   if (isNaN(amount) || amount <= 0) {
-    alert("Please enter a valid monthly amount.");
+    alert("Please enter a valid amount.");
     return;
   }
 
-  if (!Array.isArray(userData.cashflow)) {
-    userData.cashflow = [];
-  }
+  userData.cashflow.push({
+    id: Date.now(),
+    date: date,
+    frequency: frequency,
+    type: type,
+    category: category,
+    desc: desc,
+    amount: amount
+  });
 
-  userData.cashflow.push({ id: Date.now(), type: type, category: category, desc: desc, amount: amount });
   document.getElementById("cashflowDesc").value = "";
   document.getElementById("cashflowAmount").value = "";
   persistData();
+  renderCashflow();
 };
 
 window.removeCashflowItem = function (id) {
-  userData.cashflow = (userData.cashflow || []).filter(c => c.id !== id);
+  userData.cashflow = userData.cashflow.filter(c => c.id !== id);
   persistData();
+  renderCashflow();
 };
+
+function renderCashflow() {
+  const monthFilter = document.getElementById("cashflowMonthFilter") ? document.getElementById("cashflowMonthFilter").value : "";
+  const tbody = document.querySelector("#cashflowTable tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  const filtered = (userData.cashflow || []).filter(c => {
+    if (!monthFilter) return true;
+    if (c.frequency === "monthly") return true; // Monthly recurring items appear in all monthly views
+    return c.date && c.date.startsWith(monthFilter);
+  });
+
+  const totalIncome = filtered
+    .filter(c => c.type === "income")
+    .reduce((sum, c) => sum + c.amount, 0);
+
+  const totalExpense = filtered
+    .filter(c => c.type === "expense")
+    .reduce((sum, c) => sum + c.amount, 0);
+
+  const netSurplus = totalIncome - totalExpense;
+
+  const incEl = document.getElementById("totalIncomeDisplay");
+  const expEl = document.getElementById("totalExpenseDisplay");
+  const surpEl = document.getElementById("netSurplusDisplay");
+
+  if (incEl) incEl.innerText = "₹" + Math.round(totalIncome).toLocaleString('en-IN');
+  if (expEl) expEl.innerText = "₹" + Math.round(totalExpense).toLocaleString('en-IN');
+  if (surpEl) {
+    surpEl.innerText = "₹" + Math.round(netSurplus).toLocaleString('en-IN');
+    surpEl.style.color = netSurplus >= 0 ? "#38bdf8" : "#f87171";
+  }
+
+  filtered.forEach(c => {
+    const color = c.type === "income" ? "color: #4ade80;" : "color: #f87171;";
+    const prefix = c.type === "income" ? "+₹" : "-₹";
+    const freqLabel = c.frequency === "monthly" ? "Monthly" : "One-time";
+
+    tbody.innerHTML += '<tr>' +
+      '<td><span class="stat-label">' + (c.date || "-") + '<br/>(' + freqLabel + ')</span></td>' +
+      '<td><strong>' + c.desc + '</strong></td>' +
+      '<td><span class="stat-label">' + c.category + '</span></td>' +
+      '<td style="' + color + ' font-weight: 600;">' + prefix + c.amount.toLocaleString('en-IN') + '</td>' +
+      '<td style="text-align: right;"><button type="button" class="btn-sm btn-danger" onclick="removeCashflowItem(' + c.id + ')">Delete</button></td>' +
+    '</tr>';
+  });
+}
 
 // --- Dashboard Render ---
 function render() {
@@ -376,7 +706,7 @@ function render() {
     goalSelect.value = currentSelected;
   }
 
-  // 3. Allocations
+  // 3. Allocations Breakdown
   const catTotalsINR = {};
   (userData.targets || []).forEach(t => { catTotalsINR[t.name] = 0; });
   (userData.holdings || []).forEach(h => {
@@ -440,7 +770,7 @@ function render() {
     });
   }
 
-  // 4. Holdings Table
+  // 4. Holdings Table with EDIT Button
   const tableBody = document.querySelector("#holdingsTable tbody");
   if (tableBody) {
     tableBody.innerHTML = "";
@@ -456,12 +786,15 @@ function render() {
       tableBody.innerHTML += '<tr>' +
         '<td><strong>' + h.name + '</strong><br/><span class="stat-label">' + h.category + ' • ' + goalName + '</span></td>' +
         '<td>' + displayCurrency + '<br/><span class="stat-label">≈ ₹' + Math.round(valINR).toLocaleString('en-IN') + '</span></td>' +
-        '<td><button type="button" class="btn-sm btn-danger" onclick="removeHolding(' + h.id + ')">Delete</button></td>' +
+        '<td style="text-align: right;">' +
+          '<button type="button" class="btn-sm btn-secondary" onclick="editHolding(' + h.id + ')" style="margin-right:4px;">Edit</button>' +
+          '<button type="button" class="btn-sm btn-danger" onclick="removeHolding(' + h.id + ')">×</button>' +
+        '</td>' +
       '</tr>';
     });
   }
 
-  // 5. Goals
+  // 5. Goals with Inflation
   const goalsEl = document.getElementById("goalsList");
   if (goalsEl) {
     goalsEl.innerHTML = "";
@@ -535,47 +868,11 @@ function render() {
     });
   }
 
-  // 6. Income & Expenses Cashflow Summary
-  const cashflowArr = Array.isArray(userData.cashflow) ? userData.cashflow : [];
-  const totalIncome = cashflowArr
-    .filter(c => c.type === "income")
-    .reduce((sum, c) => sum + c.amount, 0);
-
-  const totalExpense = cashflowArr
-    .filter(c => c.type === "expense")
-    .reduce((sum, c) => sum + c.amount, 0);
-
-  const netSurplus = totalIncome - totalExpense;
-
-  const incEl = document.getElementById("totalIncomeDisplay");
-  const expEl = document.getElementById("totalExpenseDisplay");
-  const surpEl = document.getElementById("netSurplusDisplay");
-
-  if (incEl) incEl.innerText = "₹" + Math.round(totalIncome).toLocaleString('en-IN');
-  if (expEl) expEl.innerText = "₹" + Math.round(totalExpense).toLocaleString('en-IN');
-  if (surpEl) {
-    surpEl.innerText = "₹" + Math.round(netSurplus).toLocaleString('en-IN');
-    surpEl.style.color = netSurplus >= 0 ? "#38bdf8" : "#f87171";
-  }
-
-  const cashTableBody = document.querySelector("#cashflowTable tbody");
-  if (cashTableBody) {
-    cashTableBody.innerHTML = "";
-    cashflowArr.forEach(c => {
-      const color = c.type === "income" ? "color: #4ade80;" : "color: #f87171;";
-      const prefix = c.type === "income" ? "+₹" : "-₹";
-
-      cashTableBody.innerHTML += '<tr>' +
-        '<td><strong>' + c.desc + '</strong></td>' +
-        '<td><span class="stat-label">' + c.category + ' (' + c.type + ')</span></td>' +
-        '<td style="' + color + ' font-weight: 600;">' + prefix + c.amount.toLocaleString('en-IN') + '</td>' +
-        '<td><button type="button" class="btn-sm btn-danger" onclick="removeCashflowItem(' + c.id + ')">Delete</button></td>' +
-      '</tr>';
-    });
-  }
+  renderCashflow();
+  renderTrades();
 }
 
-// Restore active session if present
+// Restore active user session on startup
 const active = sessionStorage.getItem('current_user');
 if (active && getUsersDb()[active]) {
   loginUser(active, getUsersDb()[active]);

@@ -57,6 +57,7 @@
     <!-- Navigation Tabs -->
     <div class="tab-bar">
       <button type="button" id="tabBtnPortfolio" class="tab-btn active" onclick="switchTab('portfolio')">Portfolio & Goals</button>
+      <button type="button" id="tabBtnTransactions" class="tab-btn" onclick="switchTab('transactions')">Transactions / Trade Ledger</button>
       <button type="button" id="tabBtnCashflow" class="tab-btn" onclick="switchTab('cashflow')">Income & Expenses</button>
     </div>
 
@@ -87,7 +88,7 @@
             <h2>Goal-Based Portfolios</h2>
             <input type="hidden" id="goalEditId" value="" />
             <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;">
-              <input type="text" id="goalTitle" placeholder="Goal Name (e.g., Retirement, House, Education)" />
+              <input type="text" id="goalTitle" placeholder="Goal Name (e.g., Retirement, Child Higher Ed)" />
               
               <div style="display: flex; gap: 8px;">
                 <input type="number" id="goalCostToday" placeholder="Current Cost ₹" title="Cost of goal in today's money" oninput="calculateFutureTargetPreview()" style="flex: 1;" />
@@ -112,9 +113,10 @@
         <!-- Holdings -->
         <div>
           <div class="card">
-            <h2>Add Investment Holding</h2>
+            <h2 id="holdingFormHeading">Add / Edit Investment Holding</h2>
+            <input type="hidden" id="holdingEditId" value="" />
             <div style="display: flex; flex-direction: column; gap: 10px;">
-              <input type="text" id="holdingName" placeholder="Holding Name (e.g., Nifty 50 ETF, Apple, FD)" />
+              <input type="text" id="holdingName" placeholder="Holding Name (e.g., Zerodha Demat Equity, SBI FD)" />
               
               <div style="display: flex; gap: 8px;">
                 <select id="assetCategory" style="flex: 1;">
@@ -142,18 +144,24 @@
                 </select>
               </div>
 
-              <button type="button" onclick="addHolding()">Add to Portfolio</button>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" id="holdingSubmitBtn" onclick="saveHolding()" style="flex: 2;">Add to Portfolio</button>
+                <button type="button" id="holdingCancelBtn" onclick="cancelHoldingEdit()" class="btn-secondary" style="flex: 1; display: none;">Cancel</button>
+              </div>
             </div>
           </div>
 
           <div class="card">
-            <h2>Holdings Breakdown</h2>
+            <div class="row-between">
+              <h2>Holdings Breakdown</h2>
+              <button type="button" class="btn-sm btn-secondary" onclick="syncTradesToHoldings()" title="Auto-aggregate your trade items into holdings">Auto-Sync From Trade Ledger</button>
+            </div>
             <table id="holdingsTable">
               <thead>
                 <tr>
                   <th>Holding</th>
                   <th>Value</th>
-                  <th>Action</th>
+                  <th style="text-align: right;">Action</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -163,19 +171,119 @@
       </div>
     </div>
 
-    <!-- TAB 2: INCOME & EXPENSES -->
+    <!-- TAB 2: TRANSACTIONS / TRADE LEDGER -->
+    <div id="viewTransactions" style="display: none;">
+      <div class="grid">
+        <!-- New Trade Form -->
+        <div class="card">
+          <h2 id="tradeFormHeading">Record Trade / Investment (e.g. Zerodha, FD, MF)</h2>
+          <input type="hidden" id="tradeEditId" value="" />
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; gap: 8px;">
+              <input type="date" id="tradeDate" style="flex: 1;" />
+              <select id="tradeCategory" style="flex: 1;">
+                <option value="Indian Stocks">Indian Stocks (Zerodha)</option>
+                <option value="Mutual Funds">Mutual Funds</option>
+                <option value="US Stocks">US Stocks</option>
+                <option value="Bonds">Bonds</option>
+                <option value="Fixed Deposits">Fixed Deposits</option>
+                <option value="Gold">Gold</option>
+                <option value="Real Estate">Real Estate</option>
+              </select>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="tradeTicker" placeholder="Ticker / Scheme (e.g. RELIANCE, Parag Parikh Flexi)" style="flex: 2;" />
+              <input type="text" id="tradePlatform" placeholder="Broker (Zerodha)" style="flex: 1;" />
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="tradeQty" placeholder="Units / Qty" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
+              <input type="number" id="tradeBuyPrice" placeholder="Buy Price (₹)" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
+              <input type="number" id="tradeCurrentPrice" placeholder="Current Price (₹)" step="any" oninput="calculateTradePreview()" style="flex: 1;" />
+            </div>
+
+            <div id="tradePreview" style="font-size: 0.8rem; color: #38bdf8; background: #0b1120; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);">
+              Invested: ₹0 • Current Value: ₹0 • P&L: ₹0 (0%)
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button type="button" id="tradeSubmitBtn" onclick="saveTrade()" style="flex: 2;">Record Transaction</button>
+              <button type="button" id="tradeCancelBtn" onclick="cancelTradeEdit()" class="btn-secondary" style="flex: 1; display: none;">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trade Summary Metrics -->
+        <div class="card">
+          <h2>Trade Ledger Summary</h2>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+            <div style="background:#0b1120; padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div class="stat-label">Total Capital Invested</div>
+              <div class="plan-metric" id="totalTradeInvestedDisplay">₹0</div>
+            </div>
+            <div style="background:#0b1120; padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div class="stat-label">Total Current Market Value</div>
+              <div class="plan-metric" id="totalTradeCurrentDisplay">₹0</div>
+            </div>
+          </div>
+          <div id="totalTradePnlDisplay" style="font-weight:700; font-size:1rem; text-align:center; padding:8px; border-radius:6px; background:#0b1120; border:1px solid var(--border);">
+            Unrealized P&L: ₹0 (0%)
+          </div>
+        </div>
+      </div>
+
+      <!-- Trade Table -->
+      <div class="card">
+        <div class="row-between">
+          <h2>Individual Assets / Holdings Ledger</h2>
+          <button type="button" class="btn-sm" onclick="syncTradesToHoldings()">⚡ Sync Current Values to Portfolio</button>
+        </div>
+        <div style="overflow-x: auto;">
+          <table id="tradeTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Ticker / Scheme</th>
+                <th>Category / Broker</th>
+                <th>Qty</th>
+                <th>Buy Price</th>
+                <th>Current Price</th>
+                <th>Total Value</th>
+                <th>P&L</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: INCOME & EXPENSES -->
     <div id="viewCashflow" style="display: none;">
+      <!-- Month Filter for Review -->
+      <div class="card" style="padding: 10px 16px;">
+        <div class="row-between">
+          <span style="font-weight: 600;">Monthly Cashflow Review:</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="month" id="cashflowMonthFilter" onchange="renderCashflow()" />
+            <button type="button" class="btn-sm btn-secondary" onclick="resetMonthFilter()">Show All</button>
+          </div>
+        </div>
+      </div>
+
       <div class="grid-three">
         <div class="card">
-          <div class="stat-label">Monthly Income</div>
+          <div class="stat-label">Total Inflow (Income)</div>
           <div class="stat-value" id="totalIncomeDisplay" style="color: #4ade80;">₹0</div>
         </div>
         <div class="card">
-          <div class="stat-label">Monthly Expenses</div>
+          <div class="stat-label">Total Outflow (Expenses)</div>
           <div class="stat-value" id="totalExpenseDisplay" style="color: #f87171;">₹0</div>
         </div>
         <div class="card">
-          <div class="stat-label">Net Surplus (Savings)</div>
+          <div class="stat-label">Monthly Savings (Surplus)</div>
           <div class="stat-value" id="netSurplusDisplay">₹0</div>
         </div>
       </div>
@@ -183,8 +291,16 @@
       <div class="grid">
         <!-- Cashflow Form -->
         <div class="card">
-          <h2>Add Income / Expense</h2>
+          <h2>Add Income / Expense Entry</h2>
           <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; gap: 8px;">
+              <input type="date" id="cashflowDate" style="flex: 1;" />
+              <select id="cashflowFrequency" style="flex: 1;">
+                <option value="monthly">Monthly Recurring</option>
+                <option value="onetime">One-Time</option>
+              </select>
+            </div>
+
             <div style="display: flex; gap: 8px;">
               <select id="cashflowType" style="flex: 1;" onchange="updateCashflowCategories()">
                 <option value="income">Income (+)</option>
@@ -193,23 +309,24 @@
               <select id="cashflowCategory" style="flex: 1;"></select>
             </div>
 
-            <input type="text" id="cashflowDesc" placeholder="Description (e.g. Salary, Rent, EMI)" />
-            <input type="number" id="cashflowAmount" placeholder="Monthly Amount (₹)" />
+            <input type="text" id="cashflowDesc" placeholder="Description (e.g. Cisco Salary, House Rent, EMI)" />
+            <input type="number" id="cashflowAmount" placeholder="Amount (₹)" />
 
-            <button type="button" onclick="addCashflowItem()">Record Cashflow Entry</button>
+            <button type="button" onclick="addCashflowItem()">Record Entry</button>
           </div>
         </div>
 
         <!-- Cashflow List -->
         <div class="card">
-          <h2>Monthly Cashflow Entries</h2>
+          <h2>Recorded Cashflow Entries</h2>
           <table id="cashflowTable">
             <thead>
               <tr>
+                <th>Date / Freq</th>
                 <th>Description</th>
                 <th>Category</th>
-                <th>Monthly</th>
-                <th>Action</th>
+                <th>Amount</th>
+                <th style="text-align: right;">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
